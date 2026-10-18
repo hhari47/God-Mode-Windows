@@ -1,0 +1,21 @@
+# GodMode for Windows - Dependencies
+# Core
+google-generativeai>=0.8.0
+python-dotenv>=1.0.0
+
+# UI
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# Screen capture & OCR
+mss>=9.0.0
+pytesseract>=0.3.10
+
+# Input capture
+pyperclip>=1.8.0
+comtypes>=1.4.0
+pynput>=1.7.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
