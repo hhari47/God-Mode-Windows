@@ -77,8 +77,12 @@ class TestSignalCoordinator:
         assert signal_answer(None) is False
         assert signal_answer(0) is False
 
-        # Out of bounds (> 4) -> rejected
-        assert signal_answer(5) is False
+        # Option 5 (E) -> 5 blinks
+        signal_answer(5, duration_ms=100)
+        mock_blink.assert_called_with(count=5, duration_ms=100)
+
+        # Out of bounds (> 10) -> rejected
+        assert signal_answer(11) is False
 
     @patch("godmode.signal.signal_answer")
     def test_signal_answer_async(self, mock_signal):

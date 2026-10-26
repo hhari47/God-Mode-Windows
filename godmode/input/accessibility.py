@@ -148,20 +148,52 @@ def _send_key(vk: int, up: bool = False) -> None:
     user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
 
 
-def _release_modifiers() -> None:
-    """Release any modifier keys that may currently be physically or virtually held down."""
-    for vk in (VK_LWIN, VK_RWIN, VK_MENU, VK_SHIFT, VK_SPACE):
-        user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+try:
+    from pynput.keyboard import Controller as PynputController, Key as PynputKey
+    _pynput_kbd = PynputController()
+except Exception:
+    _pynput_kbd = None
+
+
+def _wait_for_keys_released(timeout: float = 0.4) -> None:
+    """Wait until user has released physical modifier keys (Alt, Win, Space)."""
+    start = time.time()
+    while time.time() - start < timeout:
+        alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+        space = bool(user32.GetAsyncKeyState(VK_SPACE) & 0x8000)
+        win = bool((user32.GetAsyncKeyState(VK_LWIN) | user32.GetAsyncKeyState(VK_RWIN)) & 0x8000)
+        if not (alt or space or win):
+            break
+        time.sleep(0.02)
 
 
 def _simulate_ctrl_c() -> None:
     """Simulate Ctrl+C keystroke to copy selection to clipboard."""
-    _release_modifiers()
+    _wait_for_keys_released(timeout=0.4)
+    # Release any lingering virtual key states
+    for vk in (VK_MENU, VK_LWIN, VK_RWIN, VK_SHIFT, VK_SPACE):
+        user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
     time.sleep(0.04)
+
+    if _pynput_kbd is not None:
+        try:
+            with _pynput_kbd.pressed(PynputKey.ctrl):
+                time.sleep(0.02)
+                _pynput_kbd.press('c')
+                time.sleep(0.03)
+                _pynput_kbd.release('c')
+                time.sleep(0.02)
+            return
+        except Exception as e:
+            logger.debug("pynput Ctrl+C simulation failed: %s", e)
+
+    # Fallback to keybd_event with proper keydown/keyup timing
     user32.keybd_event(VK_CONTROL, 0, 0, 0)
+    time.sleep(0.02)
     user32.keybd_event(VK_C, 0, 0, 0)
-    time.sleep(0.03)
+    time.sleep(0.04)
     user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)
+    time.sleep(0.02)
     user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
 
@@ -245,6 +277,7 @@ def capture_selected_text() -> Optional[str]:
 
         # Save current clipboard
         original_clipboard = _save_clipboard()
+        captured_text = None
 
         try:
             # Clear clipboard first to detect fresh copy
@@ -261,18 +294,21 @@ def capture_selected_text() -> Optional[str]:
                 text = _read_clipboard()
                 if text and text.strip():
                     logger.info("Text captured via clipboard (%d chars)", len(text))
-                    return text.strip()
+                    captured_text = text.strip()
+                    return captured_text
 
             # Strategy 3: Fallback to existing clipboard content if simulation didn't copy anything new
             if original_clipboard and original_clipboard.strip():
                 logger.info("Falling back to existing clipboard content (%d chars)", len(original_clipboard))
-                return original_clipboard.strip()
+                captured_text = original_clipboard.strip()
+                _restore_clipboard(original_clipboard)
+                return captured_text
 
             logger.info("No text selected or capture failed")
             return None
 
         finally:
-            # Always restore original clipboard if we replaced it
-            if original_clipboard is not None:
+            # Only restore original clipboard if capture failed completely
+            if captured_text is None and original_clipboard is not None:
                 _restore_clipboard(original_clipboard)
 

@@ -20,6 +20,14 @@ class Option:
     label: str          # e.g., "A", "B", "1", "2"
     text: str           # The option content
     original_raw: str = ""  # Original unparsed text for diagnostics
+    option_id: str = ""     # Unique identifier (defaults to label)
+    original_label: str = ""  # Raw label before normalization (e.g. "1", "(A)")
+
+    def __post_init__(self):
+        if not self.option_id:
+            self.option_id = self.label
+        if not self.original_label:
+            self.original_label = self.label
 
     def __str__(self) -> str:
         return f"{self.label}. {self.text}"
@@ -38,6 +46,9 @@ class ParsedQuestion:
     is_multiple_choice: bool = False       # True if valid MCQ detected
     raw_input: str = ""                    # Original raw text (for diagnostics only)
     parse_warnings: list[str] = field(default_factory=list)
+    question_type: str = "multiple_choice" # "multiple_choice" or "general_text"
+    extraction_confidence: float = 1.0     # 0.0 to 1.0
+    source_reference: str = ""
 
     @property
     def option_count(self) -> int:
@@ -71,6 +82,15 @@ class MultipleChoiceResult:
     selected_option: Optional[str] = None       # e.g., "B"
     validated_option_number: Optional[int] = None  # e.g., 2
     validation_status: ValidationStatus = ValidationStatus.FAILED
+
+    # Structured internal result fields
+    question: str = ""
+    options: list[Option] = field(default_factory=list)
+    answer_text: Optional[str] = None
+    option_index: Optional[int] = None          # 0-based index or None
+    option_label: Optional[str] = None          # e.g., "B" or None
+    explanation: str = ""
+    mapping_status: str = "unresolved"
 
     # Stage details for diagnostics
     stage1_answer: Optional[str] = None
@@ -155,11 +175,26 @@ class WorkflowResult:
     def result_summary(self) -> str:
         if self.mcq_result:
             r = self.mcq_result
+            opt_text = ""
+            opt_num = r.validated_option_number
+            if self.parsed_question and r.selected_option:
+                for opt in self.parsed_question.options:
+                    if opt.label.upper() == r.selected_option.upper():
+                        opt_text = f": {opt.text}"
+                        break
+            if opt_num is None and r.selected_option:
+                sel = r.selected_option.upper()
+                if sel in "ABCDEFGHIJ":
+                    opt_num = ord(sel) - ord("A") + 1
+                elif sel.isdigit():
+                    opt_num = int(sel)
+
+            num_str = f" (Option {opt_num})" if opt_num else ""
             if r.is_validated:
-                return f"Answer: {r.selected_option} (Option {r.validated_option_number}) — Validated ✓"
-            return f"Answer: {r.selected_option or 'Unknown'} — {r.validation_status.value}"
+                return f"Answer: {r.selected_option}{num_str}{opt_text} — Validated ✓"
+            return f"Answer: {r.selected_option or 'Unknown'}{num_str}{opt_text} — {r.validation_status.value}"
         if self.text_result:
-            preview = self.text_result.response_text[:100]
+            preview = self.text_result.response_text[:100].replace("\n", " ")
             return f"Response ({self.text_result.character_count} chars): {preview}..."
         if self.failure:
             return str(self.failure)

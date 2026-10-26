@@ -68,3 +68,19 @@ class TestWorkflowRouter:
         decision = route_question(pq)
         assert decision.workflow == WorkflowType.GENERAL_TEXT
         assert decision.confidence == 0.0
+
+    def test_routes_dot_options_to_multiple_choice(self):
+        from godmode.parser import parse_question
+        raw = "What is RAM?\n. Volatile memory\n. Non-volatile storage"
+        pq = parse_question(raw)
+        decision = route_question(pq)
+        assert decision.workflow == WorkflowType.MULTIPLE_CHOICE
+        assert decision.confidence == 1.0
+
+    def test_routes_unlabeled_lines_to_multiple_choice(self):
+        from godmode.parser import parse_question
+        raw = "What is the capital of France?\nParis\nLondon\nBerlin\nMadrid"
+        pq = parse_question(raw)
+        decision = route_question(pq)
+        assert decision.workflow == WorkflowType.MULTIPLE_CHOICE
+        assert decision.confidence == 1.0

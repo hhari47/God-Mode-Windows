@@ -7,7 +7,8 @@ that work across all applications without requiring elevated/admin permissions.
 Default Hotkeys:
   - Ctrl + Alt + Space: Silent capture selected text & execute pipeline (LED signal output)
   - Ctrl + Alt + X: Alternative shortcut for silent text capture
-  - Ctrl + Shift + S: Region snip OCR & execute pipeline
+  - Ctrl + Shift + O / Ctrl + Alt + O: Silent background Screen OCR & solve (Clean display, zero popups)
+  - Ctrl + Shift + S: Region snip OCR & execute pipeline (Manual crop)
   - Ctrl + Shift + G: Bring GodMode window to foreground
 """
 
@@ -30,13 +31,15 @@ MOD_WIN = 0x0008
 MOD_NOREPEAT = 0x4000
 
 # Virtual Key codes
-VK_Q = 0x51
-VK_S = 0x53
-VK_G = 0x47
-VK_X = 0x58
-VK_SPACE = 0x20
+VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_MENU = 0x12  # Alt
+VK_SPACE = 0x20
+VK_G = 0x47
+VK_O = 0x4F
+VK_Q = 0x51
+VK_S = 0x53
+VK_X = 0x58
 VK_LWIN = 0x5B
 VK_RWIN = 0x5C
 
@@ -72,10 +75,12 @@ class GlobalHotkeyManager:
         on_capture_text: Optional[Callable[[], None]] = None,
         on_capture_snip: Optional[Callable[[], None]] = None,
         on_toggle_ui: Optional[Callable[[], None]] = None,
+        on_silent_ocr: Optional[Callable[[], None]] = None,
     ):
         self.on_capture_text = on_capture_text
         self.on_capture_snip = on_capture_snip
         self.on_toggle_ui = on_toggle_ui
+        self.on_silent_ocr = on_silent_ocr
 
         self._thread: Optional[threading.Thread] = None
         self._thread_id: Optional[int] = None
@@ -84,7 +89,9 @@ class GlobalHotkeyManager:
         self._hook = None
         self._hook_cb = None
         self._space_down = False
+        self._o_down = False
         self._last_capture_time = 0.0
+        self._last_ocr_time = 0.0
 
     def _trigger_capture_text(self) -> None:
         """Debounced trigger for capture_text callback."""
@@ -95,8 +102,17 @@ class GlobalHotkeyManager:
         if self.on_capture_text:
             threading.Thread(target=self.on_capture_text, daemon=True).start()
 
+    def _trigger_silent_ocr(self) -> None:
+        """Debounced trigger for silent_ocr callback."""
+        now = time.time()
+        if now - self._last_ocr_time < 0.5:
+            return
+        self._last_ocr_time = now
+        if self.on_silent_ocr:
+            threading.Thread(target=self.on_silent_ocr, daemon=True).start()
+
     def _hook_proc(self, nCode: int, wParam: int, lParam: int) -> int:
-        """Low-level keyboard hook for responsive intercept of Ctrl + Alt + Space or Ctrl + Alt + X."""
+        """Low-level keyboard hook for responsive intercept of shortcuts."""
         if nCode >= 0:
             try:
                 kb = KBDLLHOOKSTRUCT.from_address(lParam)
@@ -111,6 +127,18 @@ class GlobalHotkeyManager:
                                 self._trigger_capture_text()
                     elif wParam in (WM_KEYUP, WM_SYSKEYUP):
                         self._space_down = False
+                elif kb.vkCode == VK_O:
+                    if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                        ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                        shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
+                        alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+                        if ctrl and (shift or alt):
+                            if not self._o_down:
+                                self._o_down = True
+                                logger.info("Triggered via low-level hook: Ctrl + %s + O (Silent OCR)", "Shift" if shift else "Alt")
+                                self._trigger_silent_ocr()
+                    elif wParam in (WM_KEYUP, WM_SYSKEYUP):
+                        self._o_down = False
             except Exception as e:
                 logger.debug("Hook error: %s", e)
         return user32.CallNextHookEx(None, nCode, wParam, lParam)
@@ -137,12 +165,12 @@ class GlobalHotkeyManager:
     def _msg_loop(self) -> None:
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
 
-        # Install low-level hook for Ctrl+Alt+Space
+        # Install low-level hook for instant response
         self._hook_cb = HOOKPROC(self._hook_proc)
         try:
             self._hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_cb, 0, 0)
             if self._hook:
-                logger.info("Low-level hook installed for Ctrl+Alt+Space")
+                logger.info("Low-level hook installed for global hotkeys")
         except Exception as e:
             logger.debug("Could not install low-level hook: %s", e)
 
@@ -151,11 +179,15 @@ class GlobalHotkeyManager:
         # ID 2: Ctrl + Shift + S (Snip & Solve)
         # ID 3: Ctrl + Shift + G (Toggle UI)
         # ID 4: Ctrl + Alt + X (Solve Selected Alternate)
+        # ID 5: Ctrl + Shift + O (Silent Screen OCR & Solve)
+        # ID 6: Ctrl + Alt + O (Silent Screen OCR & Solve Alternate)
         hotkeys = [
             (1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE, "Ctrl+Alt+Space (Solve Selected)"),
             (2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_S, "Ctrl+Shift+S (Snip & Solve)"),
             (3, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_G, "Ctrl+Shift+G (Toggle UI)"),
             (4, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_X, "Ctrl+Alt+X (Solve Selected Alternate)"),
+            (5, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_O, "Ctrl+Shift+O (Silent Screen OCR)"),
+            (6, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_O, "Ctrl+Alt+O (Silent Screen OCR Alternate)"),
         ]
 
         for hk_id, mod, vk, desc in hotkeys:
@@ -183,6 +215,8 @@ class GlobalHotkeyManager:
                         threading.Thread(target=self.on_capture_snip, daemon=True).start()
                     elif hk_id == 3 and self.on_toggle_ui:
                         self.on_toggle_ui()
+                    elif hk_id in (5, 6):
+                        self._trigger_silent_ocr()
 
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))

@@ -9,6 +9,7 @@ Pillow>=10.0.0
 
 # Screen capture & OCR
 mss>=9.0.0
+winocr>=0.0.15
 pytesseract>=0.3.10
 
 # Input capture

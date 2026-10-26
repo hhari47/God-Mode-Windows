@@ -18,11 +18,19 @@ from godmode.ai import GeminiClient
 
 logger = logging.getLogger(__name__)
 
-GENERAL_PROMPT = """You are a knowledgeable assistant. Answer the following question clearly, accurately, and concisely.
+GENERAL_PROMPT = """You are an expert AI assistant.
+Answer the following question clearly, accurately, and concisely.
 
-Question: {question}
+Important instructions:
+- If this is a multiple-choice question (even if unlabeled, dot-marked, or written line-by-line):
+  1. Determine the correct choice.
+  2. On the FIRST line, write ONLY: ANSWER: X
+     where X is the option letter (A, B, C, D...) or number (1, 2, 3...) or option text.
+  3. On subsequent lines, provide your explanation.
+- If this is an open-ended/descriptive question:
+  Provide a clear, accurate, and well-structured response.
 
-Provide a detailed and well-structured response."""
+Question: {question}"""
 
 
 def run_general_pipeline(
@@ -48,7 +56,12 @@ def run_general_pipeline(
             recovery_suggestion="Set GEMINI_API_KEY in .env file",
         )
 
-    prompt = GENERAL_PROMPT.format(question=parsed.question)
+    q_text = (
+        parsed.raw_input.strip()
+        if getattr(parsed, "raw_input", None) and parsed.raw_input.strip()
+        else parsed.question
+    )
+    prompt = GENERAL_PROMPT.format(question=q_text)
 
     logger.info("General text pipeline: sending to Gemini")
     response = client.generate(prompt, temperature=0.3)

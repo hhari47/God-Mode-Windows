@@ -88,3 +88,81 @@ D) Mars"""
         assert result.is_success is False
         assert result.failure is not None
         assert "API key" in result.failure.recovery_suggestion
+
+    @patch("godmode.orchestrator.signal_answer_async")
+    @patch("godmode.orchestrator.GeminiClient")
+    def test_mcq_with_dots_pipeline_success(self, mock_client_cls, mock_signal, mock_config):
+        mock_client = MagicMock()
+        mock_client.is_ready = True
+        mock_client.model_name = "gemini-2.0-flash"
+        mock_client.generate.side_effect = [
+            "Reasoning...\nANSWER: A",
+            "Verification agrees on A.\nANSWER: A",
+        ]
+        mock_client_cls.return_value = mock_client
+
+        orchestrator = GodModeOrchestrator(mock_config)
+        raw_dot_mcq = """What is RAM?
+. Volatile memory
+. Non-volatile storage"""
+
+        result = orchestrator.process(raw_dot_mcq)
+
+        assert result.is_success is True
+        assert result.workflow_type == "multiple_choice"
+        assert result.mcq_result is not None
+        assert result.mcq_result.selected_option == "A"
+        assert result.mcq_result.validated_option_number == 1
+        assert "Option 1" in result.result_summary
+        mock_signal.assert_called_once_with(1, 50)
+
+    @patch("godmode.orchestrator.signal_answer_async")
+    @patch("godmode.orchestrator.GeminiClient")
+    def test_mcq_unlabeled_lines_pipeline_success(self, mock_client_cls, mock_signal, mock_config):
+        mock_client = MagicMock()
+        mock_client.is_ready = True
+        mock_client.model_name = "gemini-2.0-flash"
+        mock_client.generate.side_effect = [
+            "Reasoning...\nANSWER: B",
+            "Verification confirms Paris.\nANSWER: B",
+        ]
+        mock_client_cls.return_value = mock_client
+
+        orchestrator = GodModeOrchestrator(mock_config)
+        raw_unlabeled = """What is the capital of France?
+London
+Paris
+Berlin
+Madrid"""
+
+        result = orchestrator.process(raw_unlabeled)
+
+        assert result.is_success is True
+        assert result.workflow_type == "multiple_choice"
+        assert result.mcq_result is not None
+        assert result.mcq_result.selected_option == "B"
+        assert result.mcq_result.validated_option_number == 2
+        assert "Paris" in result.result_summary
+        mock_signal.assert_called_once_with(2, 50)
+
+    @patch("godmode.orchestrator.signal_answer_async")
+    @patch("godmode.orchestrator.GeminiClient")
+    def test_general_workflow_mcq_fallback(self, mock_client_cls, mock_signal, mock_config):
+        mock_client = MagicMock()
+        mock_client.is_ready = True
+        mock_client.model_name = "gemini-2.0-flash"
+        # General response detects MCQ and provides ANSWER: C
+        mock_client.generate.return_value = "ANSWER: C\nThe correct choice is C because of thermodynamics."
+        mock_client_cls.return_value = mock_client
+
+        orchestrator = GodModeOrchestrator(mock_config)
+        raw_open = "Which process is adiabatic?"
+
+        result = orchestrator.process(raw_open)
+
+        assert result.is_success is True
+        assert result.workflow_type == "multiple_choice"
+        assert result.mcq_result is not None
+        assert result.mcq_result.selected_option == "C"
+        assert result.mcq_result.validated_option_number == 3
+        mock_signal.assert_called_once_with(3, 50)

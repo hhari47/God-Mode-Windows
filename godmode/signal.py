@@ -110,26 +110,33 @@ def _send_input_toggle() -> bool:
 
 
 def _keybd_event_toggle() -> None:
-    """Toggle Caps Lock using keybd_event with extended key flag and hardware scan code."""
-    scan = user32.MapVirtualKeyW(VK_CAPITAL, 0) or 0x3A
-    user32.keybd_event(VK_CAPITAL, scan, KEYEVENTF_EXTENDEDKEY, 0)
+    """Toggle Caps Lock using keybd_event with hardware scan code 0x3A (non-extended)."""
+    user32.keybd_event(VK_CAPITAL, 0x3A, 0, 0)
+    time.sleep(0.02)
+    user32.keybd_event(VK_CAPITAL, 0x3A, KEYEVENTF_KEYUP, 0)
     time.sleep(0.01)
-    user32.keybd_event(VK_CAPITAL, scan, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
 
 
 def _toggle_capslock() -> None:
     """
     Toggle Caps Lock simulating a key press and release.
-    Tries modern SendInput first, then keybd_event, then pynput.
+    Uses native Windows keybd_event with scan code 0x3A.
+    Executes exactly ONE method per toggle to prevent double-tap cancellation.
     """
-    success = _send_input_toggle()
-    if not success:
+    try:
         _keybd_event_toggle()
-        if _pynput_ctrl is not None:
-            try:
-                _pynput_ctrl.tap(PynputKey.caps_lock)
-            except Exception:
-                pass
+        return
+    except Exception as e:
+        logger.debug("keybd_event toggle failed: %s", e)
+
+    if _send_input_toggle():
+        return
+
+    if _pynput_ctrl is not None:
+        try:
+            _pynput_ctrl.tap(PynputKey.caps_lock)
+        except Exception:
+            pass
 
 
 def set_capslock(desired_state: bool, current_hint: Optional[bool] = None) -> bool:
@@ -195,6 +202,8 @@ def blink_capslock(
         logger.warning("Signal already in progress — skipping duplicate")
         return False
 
+    original_state = None
+    current_state = None
     try:
         _is_signaling = True
 
@@ -243,25 +252,21 @@ def blink_capslock(
             current_state = set_capslock(False, current_hint=current_state)
             time.sleep(duration_s)
 
-        # Restore original state
-        if restore_state:
-            set_capslock(original_state, current_hint=current_state)
-            logger.info("Caps Lock restored to: %s", "ON" if original_state else "OFF")
-
         logger.info("Signal complete: %d blink(s)", count)
         return True
 
     except Exception as e:
         logger.error("Signaling failed: %s", e)
-        # Best-effort restore on error
-        try:
-            if restore_state:
-                set_capslock(original_state)
-        except Exception:
-            pass
         return False
 
     finally:
+        # Guarantee state restoration on success, failure, and cancellation
+        if restore_state and original_state is not None:
+            try:
+                set_capslock(original_state, current_hint=current_state)
+                logger.info("Caps Lock restored to: %s", "ON" if original_state else "OFF")
+            except Exception:
+                pass
         _is_signaling = False
         _signal_lock.release()
 
@@ -288,8 +293,8 @@ def signal_answer(
         logger.info("No signal: answer not validated")
         return False
 
-    if option_number > 4:
-        logger.warning("Option number %d out of range (1-4)", option_number)
+    if option_number > 10:
+        logger.warning("Option number %d out of range (1-10)", option_number)
         return False
 
     kwargs = {}

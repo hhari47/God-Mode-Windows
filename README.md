@@ -12,9 +12,9 @@ GodMode maps the original macOS architecture to native, high-performance Windows
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        1. Input Ingestion                              │
 │   ┌─────────────────────┬────────────────────┬─────────────────────┐   │
-│   │ 1a. UI Automation   │ 1b. Region Snip    │ 1c. Manual Input    │   │
-│   │  (ITextPattern /    │  (mss + Tesseract  │  (CustomTkinter     │   │
-│   │   Clipboard copy)   │   in-memory OCR)   │   Textbox)          │   │
+│   │ 1a. UI Automation   │ 1b. Screen OCR     │ 1c. Manual Input    │   │
+│   │  (ITextPattern /    │  (Native Windows   │  (CustomTkinter     │   │
+│   │   Clipboard copy)   │   winocr + mss)    │   Textbox)          │   │
 │   └──────────┬──────────┴─────────┬──────────┴──────────┬──────────┘   │
 └──────────────┼────────────────────┼─────────────────────┼──────────────┘
                ▼                    ▼                     ▼
@@ -73,7 +73,11 @@ GodMode maps the original macOS architecture to native, high-performance Windows
   2. **Screen Snip OCR**: Drag-to-select crosshair overlay with in-memory `mss` capture and local `Tesseract OCR`.
   3. **Direct Manual Input**: Type or paste any prompt or question.
 - **Robust Normalization**: Automatically extracts questions and options from letter formats (`A)`, `A.`, `(A)`), numbers (`1)`, `1.`), bullets (`•`), and dashes (`-`).
-- **Two-Stage Gemini AI Verification**:
+- **Multi-Model AI Provider Engine**:
+  - **Google Gemini**: Supports `gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-2.5-flash`, etc. with automatic fallback when rate limits occur.
+  - **xAI Grok**: Native integration using the official xAI REST API (supports `grok-2-latest`, `grok-beta`, `grok-2-1212` with 1,000 requests/day free tier).
+  - Switch providers and models on the fly in the in-app **Settings** tab.
+- **Two-Stage AI Verification**:
   - **Stage 1 (Analysis)**: Evaluates options and provides reasoning with an answer candidate.
   - **Stage 2 (Verification)**: Fresh, independent evaluation to confirm or challenge the candidate.
   - **Cross-Validation**: Only issues hardware signals when both stages achieve consensus.
@@ -84,8 +88,9 @@ GodMode maps the original macOS architecture to native, high-performance Windows
   - Option 4 (D) → 4 blinks
   - Automatically restores your Caps Lock toggle state after signaling.
 - **Native Windows Global Hotkeys** (background, no elevation needed):
+  - `Ctrl + Shift + O` (or `Ctrl + Alt + O`): **Silent Screen OCR & Solve** — Captures screen/active window silently in background with ZERO popups or overlays, extracts text via Windows Native Media OCR (~25ms), solves via active AI provider, and blinks the Caps Lock LED. The display remains completely clean.
   - `Ctrl + Alt + Space` (or `Ctrl + Alt + X`): Silently captures selected text in any app, solves it, and blinks the LED.
-  - `Ctrl + Shift + S`: Triggers screen snip crosshair OCR and solves.
+  - `Ctrl + Shift + S`: Triggers manual region snip crosshair OCR and solves.
   - `Ctrl + Shift + G`: Brings the GodMode window to the foreground.
 - **Privacy Guaranteed**: Screen captures and questions are processed strictly in RAM and never saved to disk or telemetry logs.
 - **Diagnostics Panel**: Granular checkpoint status and duration tracking (`Capture` → `Parsing` → `Routing` → `Stage 1` → `Stage 2` → `Validation` → `Signaling`).
@@ -97,9 +102,7 @@ GodMode maps the original macOS architecture to native, high-performance Windows
 ### 1. Prerequisites
 - **Windows 10 or 11** (64-bit)
 - **Python 3.10+** (tested on Python 3.14)
-- **Tesseract OCR** (optional, required only for screen snip OCR)
-  - Download installer from [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki).
-  - Default installation path: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+- **Tesseract OCR** (optional fallback; Windows 10/11 native Media OCR is built-in and enabled by default)
 
 ### 2. Environment Setup
 
@@ -116,7 +119,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. Configure Gemini API Key
+### 3. Configure API Credentials
 
 Copy `.env.example` to `.env`:
 
@@ -124,16 +127,18 @@ Copy `.env.example` to `.env`:
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and insert your Gemini API Key:
+Edit `.env` and set your preferred provider (`gemini` or `grok`):
 ```env
+AI_PROVIDER=gemini
 GEMINI_API_KEY=your_actual_gemini_api_key_here
-GEMINI_MODEL=gemini-3.8-flash
-BLINK_DURATION_MS=200
-ENABLE_LED_SIGNAL=true
-TESSERACT_PATH=C:\Program Files\Tesseract-OCR\tesseract.exe
+GEMINI_MODEL=gemini-3.5-flash-lite
+
+# Optional xAI Grok (Free tier: 1,000 requests/day):
+GROK_API_KEY=your_xai_grok_key_here
+GROK_MODEL=grok-2-latest
 ```
 
-*(You can also configure and save your API key directly inside the GodMode application's **Settings** tab!)*
+*(You can also configure, switch providers, test connections, and save API keys directly inside the GodMode application's **Settings** tab!)*
 
 ---
 
@@ -144,17 +149,21 @@ Launch GodMode:
 ```powershell
 .\.venv\Scripts\python.exe run.py
 ```
+*(Or simply double-click `run.bat` or `GodMode.vbs` to launch silently)*
 
 ### Workflow Options:
-1. **Silent Background Solve**:
+1. **Silent Screen OCR & Solve** (`Ctrl + Shift + O` or `Ctrl + Alt + O`):
+   - Works with any active exam, browser, or question window on screen.
+   - Captures the active window/screen silently in the background with **ZERO popups, overlays, or snapshots**.
+   - Extracts question and options using Windows Native Media OCR (`winocr`), solves via AI, and blinks the Caps Lock LED.
+2. **Silent Text Selection Solve** (`Ctrl + Alt + Space` or `Ctrl + Alt + X`):
    - Highlight any text in a browser, PDF, or document.
    - Press `Ctrl + Alt + Space` (or `Ctrl + Alt + X`).
    - Watch your keyboard's Caps Lock LED blink corresponding to the correct answer.
-2. **Interactive Snip Solve**:
-   - Press `Ctrl + Shift + S` or click **📸 Screenshot OCR**.
-   - Drag a rectangle across the question.
-   - The question is OCR-processed and solved instantly.
-3. **Manual Solve**:
+3. **Manual Crop Snip Solve** (`Ctrl + Shift + S`):
+   - Press `Ctrl + Shift + S` or click **✂️ Manual Snip**.
+   - Drag a rectangle across the question to crop a specific region.
+4. **Manual Solve**:
    - Type or paste your question into the **📝 Input** tab and click **🚀 Process Question**.
    - View detailed step-by-step reasoning and verification under **📊 Results**.
    - Inspect stage-by-stage timings under **🔍 Diagnostics**.
@@ -163,13 +172,13 @@ Launch GodMode:
 
 ## 🧪 Running Tests
 
-The test suite covers normalization, parsing, routing, AI pipelines, orchestrator, signal coordination, and hotkeys:
+The test suite covers normalization, parsing, routing, multi-model AI providers (Gemini & Grok), orchestrator, signal coordination, silent screen capture, and hotkeys:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -v
+python -m pytest -v
 ```
 
-All 49 unit and integration tests execute with zero external network dependencies (mocked LLM interfaces).
+All 137 unit and integration tests execute with zero external network dependencies (mocked LLM interfaces).
 
 ---
 

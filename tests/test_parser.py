@@ -26,6 +26,24 @@ class TestNormalization:
         result = normalize_text("\u2018test\u2019")
         assert "'test'" == result
 
+    def test_assessment_portal_chrome_filtering(self):
+        raw = """app.kalvium.community - To exit full screen, press
+Question 1 of 5
+14m 57s
+-
+GUI vs TUI: Why Developers Live in the Terminal
+A) Option A
+B) Option B"""
+        cleaned = normalize_text(raw)
+        assert "to exit full screen" not in cleaned.lower()
+        assert "Question 1 of 5" not in cleaned
+        assert "14m 57s" not in cleaned
+        assert "GUI vs TUI: Why Developers Live in the Terminal" in cleaned
+        pq = parse_question(raw)
+        assert pq.is_multiple_choice is True
+        assert pq.option_count == 2
+        assert "GUI vs TUI: Why Developers Live in the Terminal" in pq.question
+
 
 class TestLetterOptions:
     """Test parsing of letter-labeled options (A/B/C/D)."""
@@ -261,3 +279,231 @@ class TestParsedQuestion:
         assert [o.label for o in pq.options] == ["A", "B", "C"]
         assert [o.text for o in pq.options] == ["mkdir", "rmdir", "pwd"]
         assert "What is the command to create a directory?" in pq.question
+
+
+class TestDotAndBulletOptions:
+    """Test parsing of dot markers, middle dots, checkboxes, and radio buttons."""
+
+    def test_single_dot_format(self):
+        raw = """Which animal is a mammal?
+. Shark
+. Whale
+. Trout
+. Salmon"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Shark", "Whale", "Trout", "Salmon"]
+        assert "Which animal is a mammal?" in pq.question
+
+    def test_multi_dot_format(self):
+        raw = """What is RAM?
+.. Volatile memory
+.. Non-volatile storage
+.. Optical disc"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 3
+        assert [o.label for o in pq.options] == ["A", "B", "C"]
+        assert pq.options[0].text == "Volatile memory"
+
+    def test_middle_dot_format(self):
+        raw = """Capital of Italy?
+· Rome
+· Milan
+· Naples"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 3
+
+    def test_radio_and_checkbox_markers(self):
+        raw = """Choose an option:
+( ) Option One
+( ) Option Two
+( ) Option Three"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 3
+
+        raw_boxes = """Select one:
+[ ] Choice A
+[ ] Choice B
+[ ] Choice C"""
+        pq_boxes = parse_question(raw_boxes)
+        assert pq_boxes.is_valid_mcq
+        assert pq_boxes.option_count == 3
+
+    def test_emoji_radio_markers(self):
+        raw = """Pick a color:
+🔘 Red
+🔘 Green
+🔘 Blue"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 3
+
+
+class TestRomanOptions:
+    """Test parsing of Roman numeral options."""
+
+    def test_roman_numerals_lower(self):
+        raw = """Select the primary key:
+i) ID
+ii) Name
+iii) Age
+iv) Address"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert pq.options[0].text == "ID"
+
+    def test_roman_numerals_parentheses(self):
+        raw = """Identify the algorithm:
+(i) Dijkstra
+(ii) Prim
+(iii) Kruskal"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 3
+        assert [o.label for o in pq.options] == ["A", "B", "C"]
+
+
+class TestBareSequentialLabels:
+    """Test parsing of bare sequential letters or numbers without punctuation."""
+
+    def test_bare_letters(self):
+        raw = """Which planet is closest to the Sun?
+A Mercury
+B Venus
+C Earth
+D Mars"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Mercury", "Venus", "Earth", "Mars"]
+        assert "Which planet is closest to the Sun?" in pq.question
+
+    def test_bare_numbers(self):
+        raw = """What is 5 x 5?
+1 20
+2 25
+3 30
+4 35"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["20", "25", "30", "35"]
+
+
+class TestUnlabeledLineOptions:
+    """Test parsing of options written line-by-line one under the other with NO labels."""
+
+    def test_question_mark_with_unlabeled_lines(self):
+        raw = """What is the capital of France?
+Paris
+London
+Berlin
+Madrid"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Paris", "London", "Berlin", "Madrid"]
+        assert "What is the capital of France?" in pq.question
+
+    def test_colon_with_unlabeled_lines(self):
+        raw = """The primary component of natural gas is:
+Methane
+Ethane
+Propane
+Butane"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Methane", "Ethane", "Propane", "Butane"]
+
+    def test_question_starter_with_unlabeled_lines(self):
+        raw = """Which data structure uses LIFO
+Queue
+Stack
+Tree
+Graph"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Queue", "Stack", "Tree", "Graph"]
+
+    def test_options_header_with_unlabeled_lines(self):
+        raw = """Select the correct language:
+Options:
+Python
+JavaScript
+Rust
+Go"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["Python", "JavaScript", "Rust", "Go"]
+
+    def test_true_false_pair(self):
+        raw = """Python is a compiled-only language.
+True
+False"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 2
+        assert [o.label for o in pq.options] == ["A", "B"]
+        assert [o.text for o in pq.options] == ["True", "False"]
+
+    def test_multiline_question_stem_with_unlabeled_options(self):
+        raw = """Given the function f(x) = 2x + 3.
+What is f(4)?
+8
+10
+11
+12"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert [o.text for o in pq.options] == ["8", "10", "11", "12"]
+        assert "What is f(4)?" in pq.question
+
+    def test_unlabeled_options_without_question_mark_or_colon(self):
+        raw = """GUI vs TUI: Why Developers Live in the Terminal
+GUIs use more memory and CPU cycles
+TUIs cannot be used over SSH
+GUIs are strictly faster for navigation
+TUIs require a mouse for basic interaction"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert pq.options[0].text == "GUIs use more memory and CPU cycles"
+        assert pq.options[3].text == "TUIs require a mouse for basic interaction"
+
+    def test_tail_options_with_preceding_exam_headers(self):
+        raw = """Kalvium Core Assessment
+Single Choice Question
+Positive Marks: +1
+GUI vs TUI: Why Developers Live in the Terminal
+GUIs use more memory and CPU cycles
+TUIs cannot be used over SSH
+GUIs are strictly faster for navigation
+TUIs require a mouse for basic interaction
+Clear Selection
+Mark for Review"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert "Single Choice Question" not in pq.question
+        assert "Clear Selection" not in [o.text for o in pq.options]
+

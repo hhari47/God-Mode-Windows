@@ -45,14 +45,29 @@ class TestGlobalHotkeyManager:
         mock_register.return_value = 1
 
         manager = GlobalHotkeyManager()
-        
+
         # Test simulate thread loop initialization
         with patch("godmode.hotkeys.ctypes.windll.kernel32.GetCurrentThreadId", return_value=5678):
             with patch("godmode.hotkeys.user32.GetMessageW", return_value=0):  # Immediate exit
                 manager._running = True
                 manager._msg_loop()
 
-        # Should register 4 hotkeys (Space, S, G, X)
-        assert mock_register.call_count == 4
+        # Should register 6 hotkeys (Space, S, G, X, Shift+O, Alt+O)
+        assert mock_register.call_count == 6
         # Should unregister on cleanup
-        assert mock_unregister.call_count == 4
+        assert mock_unregister.call_count == 6
+
+    def test_trigger_silent_ocr_callback(self):
+        cb_called = False
+
+        def on_ocr():
+            nonlocal cb_called
+            cb_called = True
+
+        manager = GlobalHotkeyManager(on_silent_ocr=on_ocr)
+        manager._trigger_silent_ocr()
+
+        # Allow thread to execute
+        import time
+        time.sleep(0.05)
+        assert cb_called is True
