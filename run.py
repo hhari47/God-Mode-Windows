@@ -31,7 +31,7 @@ def main():
     logger = logging.getLogger("godmode")
 
     logger.info("=" * 50)
-    logger.info("GodMode for Windows v1.0.0")
+    logger.info("GodMode for Windows v2.0.0 (Standalone Desktop)")
     logger.info("=" * 50)
 
     # Load configuration
