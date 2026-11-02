@@ -1282,6 +1282,8 @@ class GodModeApp:
         checks = [
             ("Windows Media OCR (Native WinRT)", self._check_winocr()),
             ("Tesseract OCR (Fallback Engine)", Path(self.config.tesseract_path).exists()),
+            ("UI Automation (Accessibility Engine)", self._check_uia()),
+            ("Admin Elevation (UIPI Bypass)", self._check_admin()),
             ("AI Provider Configured", self.config.is_ai_configured),
             ("Global Windows Hotkey Hooks", True),
             ("Caps Lock Hardware Access", True),
@@ -1324,6 +1326,19 @@ class GodModeApp:
             import winocr
             return True
         except ImportError:
+            return False
+
+    def _check_uia(self) -> bool:
+        try:
+            import comtypes
+            return True
+        except ImportError:
+            return False
+
+    def _check_admin(self) -> bool:
+        try:
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
             return False
 
     # ── View Navigation Switching ─────────────────────────────────────────
@@ -1382,9 +1397,12 @@ class GodModeApp:
             time.sleep(1.2)
             text = capture_selected_text()
             if not text:
-                existing = self.input_text.get("1.0", "end").strip()
-                if existing:
-                    text = existing
+                # In protected environments that block Ctrl+C, auto fallback to Screen OCR
+                logger.info("Text capture blocked or empty — attempting Screen OCR fallback")
+                self.root.after(0, lambda: self._set_status_bar("⚡ Text capture blocked — auto-switching to Screen OCR..."))
+                time.sleep(0.3)
+                text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
+
             self.root.after(0, lambda: self._handle_capture_result(text, auto_process=True))
 
         threading.Thread(target=do_solve, daemon=True).start()
@@ -1738,12 +1756,29 @@ class GodModeApp:
     # ── Hotkey Listeners ──────────────────────────────────────────────────
 
     def _on_hotkey_capture_text(self) -> None:
-        """Global Hotkey: Ctrl+Alt+Space or Ctrl+Alt+X."""
+        """Global Hotkey: Ctrl+Alt+Space or Ctrl+Alt+X.
+
+        Tries clipboard-based text capture first. If that fails (e.g. in
+        protected test environments that block Ctrl+C), automatically falls
+        back to Screen OCR so the user still gets an answer seamlessly.
+        """
         logger.info("Global hotkey: Silent text solve")
-        time.sleep(0.25)
+        # Wait for user to release the hotkey combo before simulating Ctrl+C
+        # The capture function also waits internally, but this outer delay
+        # prevents the race condition with different environments/windows
+        time.sleep(0.5)
         text = capture_selected_text()
+
+        # If clipboard capture failed (common in protected tests that block
+        # Ctrl+C), automatically fall back to Screen OCR
         if not text:
-            self.root.after(0, lambda: self._set_status_bar("⚠️ Hotkey: No text selected in target window (select or press Ctrl+C)", "warning"))
+            logger.info("Text capture failed — falling back to Screen OCR for protected environment")
+            self.root.after(0, lambda: self._set_status_bar("⚡ Text capture blocked — auto-switching to Screen OCR..."))
+            time.sleep(0.3)
+            text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
+
+        if not text:
+            self.root.after(0, lambda: self._set_status_bar("⚠️ Hotkey: No text captured — select text or ensure question is visible on screen", "warning"))
             return
 
         def run_solve():
