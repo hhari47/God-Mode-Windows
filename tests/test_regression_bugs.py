@@ -552,3 +552,29 @@ def test_20_accessibility_selected_text_capture_helpers():
         _simulate_ctrl_c()
         assert mock_user32.keybd_event.called
 
+
+# ─── 21. Multi-candidate selection prioritizes full MCQ options ───────────────
+
+def test_21_multi_candidate_selection_prioritizes_mcq_options():
+    from godmode.input.accessibility import capture_selected_text, _has_multiple_options
+
+    full_mcq = "What is the capital of France?\nA) London\nB) Paris\nC) Berlin\nD) Madrid"
+    partial_stem = "What is the capital of France?"
+
+    assert _has_multiple_options(full_mcq) is True
+    assert _has_multiple_options(partial_stem) is False
+
+    # When clipboard capture gets full MCQ options and UIA only has partial stem, clipboard wins
+    with patch("godmode.input.accessibility._try_clipboard_capture", return_value=full_mcq):
+        with patch("godmode.input.accessibility._try_ui_automation", return_value=partial_stem):
+            result = capture_selected_text()
+            assert result == full_mcq
+            assert "B) Paris" in result
+
+    # When clipboard has nothing (e.g. website blocked copy), but UIA has the MCQ, UIA wins
+    with patch("godmode.input.accessibility._try_clipboard_capture", return_value=None):
+        with patch("godmode.input.accessibility._try_ui_automation", return_value=full_mcq):
+            result = capture_selected_text()
+            assert result == full_mcq
+
+

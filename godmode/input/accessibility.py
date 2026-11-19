@@ -15,6 +15,7 @@ import ctypes.wintypes
 import time
 import logging
 import threading
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -281,10 +282,17 @@ def _try_ui_automation() -> Optional[str]:
                             text_pattern = pattern.QueryInterface(IUIAutomation.IUIAutomationTextPattern)
                             selection = text_pattern.GetSelection()
                             if selection and selection.Length > 0:
-                                text_range = selection.GetElement(0)
-                                selected_text = text_range.GetText(-1)
-                                if selected_text and selected_text.strip():
-                                    return selected_text.strip()
+                                parts = []
+                                for i in range(selection.Length):
+                                    try:
+                                        text_range = selection.GetElement(i)
+                                        selected_text = text_range.GetText(-1)
+                                        if selected_text and selected_text.strip():
+                                            parts.append(selected_text.strip())
+                                    except Exception:
+                                        pass
+                                if parts:
+                                    return "\n".join(parts)
                     except Exception:
                         pass
                 return None
@@ -338,6 +346,16 @@ def _try_ui_automation() -> Optional[str]:
                             if text:
                                 logger.info("Text captured via UI Automation (text descendant, %d chars)", len(text))
                                 return text
+
+                        # 4. Check Document elements in foreground window (critical for Chrome, Edge, and web documents)
+                        # 50030 = UIA_DocumentControlTypeId, 30003 = UIA_ControlTypePropertyId
+                        cond_doc = uia.CreatePropertyCondition(30003, 50030)
+                        doc_elem = fg_elem.FindFirst(7, cond_doc)
+                        if doc_elem and bool(doc_elem):
+                            doc_text = _get_selection_from_pattern(doc_elem)
+                            if doc_text:
+                                logger.info("Text captured via UI Automation (document element, %d chars)", len(doc_text))
+                                return doc_text
                 except Exception as e:
                     logger.debug("UIA foreground window inspection error: %s", e)
 
@@ -411,6 +429,74 @@ def _try_win32_edit_selection() -> Optional[str]:
     return None
 
 
+# ─── Multi-Candidate Selection Helpers ───────────────────────────────────────
+
+def _has_multiple_options(text: str) -> bool:
+    """Quick check if text contains 2 or more multiple-choice option markers."""
+    if not text or len(text.strip()) < 10:
+        return False
+    # Matches A), B) or 1., 2. or (A), (B) or [A], [B] or bullet markers
+    matches = re.findall(
+        r"(?:^|[\n\r])\s*(?:\([A-Ja-j1-9]\)|\[[A-Ja-j1-9]\]|[A-Ja-j1-9][\.\)\:\-]|[•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔])\s+\S",
+        text,
+    )
+    return len(matches) >= 2
+
+
+def _try_clipboard_capture() -> Optional[str]:
+    """
+    Attempt to copy selected text via simulated keystrokes (Ctrl+C / Ctrl+Insert).
+    Preserves and restores existing clipboard content if nothing was copied.
+    """
+    original_clipboard = _save_clipboard()
+    captured_text = None
+
+    try:
+        # Clear clipboard first to detect fresh copy
+        if user32.OpenClipboard(0):
+            user32.EmptyClipboard()
+            user32.CloseClipboard()
+        time.sleep(0.02)
+
+        # Attempt 1: Simulate Ctrl+C
+        _simulate_ctrl_c()
+
+        # Poll for clipboard update (up to 400ms)
+        for _ in range(8):
+            time.sleep(0.04)
+            text = _read_clipboard()
+            if text and text.strip():
+                captured_text = text.strip()
+                logger.info("Text captured via clipboard (%d chars)", len(captured_text))
+                return captured_text
+
+        # Attempt 2: Try Ctrl+Insert (alternative copy shortcut that bypasses tests blocking Ctrl+C)
+        if user32.OpenClipboard(0):
+            user32.EmptyClipboard()
+            user32.CloseClipboard()
+        time.sleep(0.02)
+        _simulate_ctrl_insert()
+
+        for _ in range(8):
+            time.sleep(0.04)
+            text = _read_clipboard()
+            if text and text.strip():
+                captured_text = text.strip()
+                logger.info("Text captured via Ctrl+Insert (%d chars)", len(captured_text))
+                return captured_text
+
+        # Check if pre-existing clipboard already holds a valid MCQ
+        if original_clipboard and _has_multiple_options(original_clipboard):
+            logger.info("Using pre-existing clipboard text with options (%d chars)", len(original_clipboard))
+            return original_clipboard.strip()
+
+        return None
+    finally:
+        # If capture failed completely, restore original clipboard
+        if captured_text is None and original_clipboard is not None:
+            _restore_clipboard(original_clipboard)
+
+
 # ─── Public API ──────────────────────────────────────────────────────────────
 
 _capture_lock = threading.Lock()
@@ -418,12 +504,17 @@ _capture_lock = threading.Lock()
 
 def capture_selected_text() -> Optional[str]:
     """
-    Capture currently selected text from the active window.
+    Capture currently selected text from the active window with maximum completeness.
 
-    Strategy Pipeline:
-    1. Windows UI Automation (macOS AXUIElement equivalent — non-intrusive, no keys, no clipboard)
-    2. Win32 Native Control Selection (EM_GETSEL — direct message, no clipboard)
-    3. Hardware Keystroke Simulation (Ctrl+C and Ctrl+Insert fallback)
+    Multi-Candidate Resolution Strategy (inspired by Mac SelectionRetrievalOrchestrator):
+    1. Check Simulated Clipboard (Ctrl+C / Ctrl+Insert) - Universal gold standard for
+       multi-element, cross-DOM formatted selections across web browsers and desktop apps.
+    2. Check UI Automation (Direct accessibility tree read across all selection ranges) -
+       Non-intrusive fallback when Ctrl+C is intercepted or blocked by website JavaScript.
+    3. Check Win32 Native Control Selection (EM_GETSEL for native edit fields).
+    4. Evaluates candidates:
+       - Whichever candidate contains valid multiple-choice options (>= 2) wins immediately.
+       - If both or neither contain options, the longer and more complete text wins.
 
     Thread-safe. Never logs captured content (privacy).
 
@@ -431,66 +522,31 @@ def capture_selected_text() -> Optional[str]:
         Selected text string, or None if nothing is selected.
     """
     with _capture_lock:
-        # Strategy 1: UI Automation (non-intrusive, matches macOS Accessibility)
-        text = _try_ui_automation()
-        if text:
-            return text
+        # 1. Try Clipboard Simulation (Primary for web browsers, PDFs, and rich apps)
+        cb_text = _try_clipboard_capture()
+        if cb_text and _has_multiple_options(cb_text):
+            logger.info("Clipboard capture selected: contains full MCQ options (%d chars)", len(cb_text))
+            return cb_text
 
-        # Strategy 2: Win32 Edit control message query
-        text = _try_win32_edit_selection()
-        if text:
-            return text
+        # 2. Try UI Automation (Direct accessibility read)
+        uia_text = _try_ui_automation()
+        if uia_text and _has_multiple_options(uia_text):
+            logger.info("UI Automation selected: contains full MCQ options (%d chars)", len(uia_text))
+            return uia_text
 
-        # Strategy 3: Keystroke simulation (Ctrl+C and Ctrl+Insert fallback)
-        logger.debug("Direct accessibility unavailable, attempting keystroke simulation")
+        # 3. Try Win32 Edit control message query
+        win32_text = _try_win32_edit_selection()
+        if win32_text and _has_multiple_options(win32_text):
+            logger.info("Win32 Edit selection selected: contains full MCQ options (%d chars)", len(win32_text))
+            return win32_text
 
-        # Save current clipboard
-        original_clipboard = _save_clipboard()
-        captured_text = None
+        # 4. If none had >= 2 options, pick the most complete/longest candidate
+        candidates = [t for t in (cb_text, uia_text, win32_text) if t and t.strip()]
+        if candidates:
+            best = max(candidates, key=len)
+            logger.info("Selected best available text candidate (%d chars)", len(best))
+            return best
 
-        try:
-            # Clear clipboard first to detect fresh copy
-            if user32.OpenClipboard(0):
-                user32.EmptyClipboard()
-                user32.CloseClipboard()
-            time.sleep(0.03)
-
-            # Attempt 1: Release any modifier keys and simulate Ctrl+C
-            _simulate_ctrl_c()
-
-            # Poll for clipboard update (up to 600ms)
-            for _ in range(12):
-                time.sleep(0.05)
-                text = _read_clipboard()
-                if text and text.strip():
-                    logger.info("Text captured via clipboard (%d chars)", len(text))
-                    captured_text = text.strip()
-                    return captured_text
-
-            # Attempt 2: Try Ctrl+Insert (alternative copy shortcut that bypasses tests blocking Ctrl+C)
-            logger.debug("First Ctrl+C attempt failed, trying Ctrl+Insert fallback...")
-            if user32.OpenClipboard(0):
-                user32.EmptyClipboard()
-                user32.CloseClipboard()
-            time.sleep(0.05)
-            _simulate_ctrl_insert()
-
-            for _ in range(12):
-                time.sleep(0.05)
-                text = _read_clipboard()
-                if text and text.strip():
-                    logger.info("Text captured via Ctrl+Insert (%d chars)", len(text))
-                    captured_text = text.strip()
-                    return captured_text
-
-            # Do NOT fall back to old clipboard content — that causes the
-            # "stuck on old question" bug where a previous question's text
-            # gets reused instead of the newly-selected text.
-            logger.info("No text selected or Ctrl+C capture failed after 2 attempts")
-            return None
-
-        finally:
-            # Restore original clipboard if capture failed completely
-            if captured_text is None and original_clipboard is not None:
-                _restore_clipboard(original_clipboard)
+        logger.info("No text selected across all capture strategies")
+        return None
 
