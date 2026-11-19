@@ -116,14 +116,19 @@ class GlobalHotkeyManager:
         if nCode >= 0:
             try:
                 kb = KBDLLHOOKSTRUCT.from_address(lParam)
-                if kb.vkCode in (VK_SPACE, VK_X):
+                if kb.vkCode in (VK_SPACE, VK_X, VK_S):
                     if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                         ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
                         alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                        if ctrl and alt:
+                        shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
+                        if ctrl and (alt or shift):
                             if not self._space_down:
                                 self._space_down = True
-                                logger.info("Triggered via low-level hook: Ctrl + Alt + %s", "Space" if kb.vkCode == VK_SPACE else "X")
+                                logger.info(
+                                    "Triggered via low-level hook: Ctrl + %s + %s",
+                                    "Alt" if alt else "Shift",
+                                    "Space" if kb.vkCode == VK_SPACE else chr(kb.vkCode)
+                                )
                                 self._trigger_capture_text()
                     elif wParam in (WM_KEYUP, WM_SYSKEYUP):
                         self._space_down = False
@@ -209,10 +214,8 @@ class GlobalHotkeyManager:
                 if msg.message == WM_HOTKEY:
                     hk_id = msg.wParam
                     logger.debug("Received WM_HOTKEY: %d", hk_id)
-                    if hk_id in (1, 4):
+                    if hk_id in (1, 2, 4):
                         self._trigger_capture_text()
-                    elif hk_id == 2 and self.on_capture_snip:
-                        threading.Thread(target=self.on_capture_snip, daemon=True).start()
                     elif hk_id == 3 and self.on_toggle_ui:
                         self.on_toggle_ui()
                     elif hk_id in (5, 6):

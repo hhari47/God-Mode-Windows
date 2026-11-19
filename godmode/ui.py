@@ -315,7 +315,7 @@ class GodModeApp:
         ).pack(fill="x", padx=10, pady=(8, 4))
 
         shortcuts = [
-            ("Ctrl+Alt+Space", "Solve Selected"),
+            ("Ctrl+Shift+S / Space", "Solve Selected"),
             ("Ctrl+Shift+O", "Screen OCR"),
             ("Ctrl+Shift+G", "Toggle Window"),
         ]
@@ -351,7 +351,7 @@ class GodModeApp:
 
         self.status_label = ctk.CTkLabel(
             self.status_bar_frame,
-            text="Ready — Select text (Ctrl+Alt+Space) or trigger Silent Screen OCR (Ctrl+Shift+O)",
+            text="Ready — Select text (Ctrl+Shift+S or Ctrl+Alt+Space) or Screen OCR (Ctrl+Shift+O)",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_dim"],
             anchor="w",
@@ -1756,73 +1756,41 @@ class GodModeApp:
     # ── Hotkey Listeners ──────────────────────────────────────────────────
 
     def _on_hotkey_capture_text(self) -> None:
-        """Global Hotkey: Ctrl+Alt+Space or Ctrl+Alt+X.
-
-        Tries clipboard-based text capture first. If that fails (e.g. in
-        protected test environments that block Ctrl+C), automatically falls
-        back to Screen OCR so the user still gets an answer seamlessly.
-        """
-        logger.info("Global hotkey: Silent text solve")
-        # Wait for user to release the hotkey combo before simulating Ctrl+C
-        # The capture function also waits internally, but this outer delay
-        # prevents the race condition with different environments/windows
-        time.sleep(0.5)
+        """Global Hotkey: Capture selected text, redirect to GodMode, solve & blink."""
+        logger.info("Global hotkey: Solve selected text")
+        time.sleep(0.3)
         text = capture_selected_text()
 
-        # If clipboard capture failed (common in protected tests that block
-        # Ctrl+C), automatically fall back to Screen OCR
+        # If clipboard/accessibility capture failed, automatically fall back to Screen OCR
         if not text:
-            logger.info("Text capture failed — falling back to Screen OCR for protected environment")
-            self.root.after(0, lambda: self._set_status_bar("⚡ Text capture blocked — auto-switching to Screen OCR..."))
-            time.sleep(0.3)
+            logger.info("Text capture empty — attempting Screen OCR fallback")
             text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
 
-        if not text:
-            self.root.after(0, lambda: self._set_status_bar("⚠️ Hotkey: No text captured — select text or ensure question is visible on screen", "warning"))
-            return
+        def show_and_solve():
+            self._toggle_window()
+            self._handle_capture_result(text, auto_process=True)
 
-        def run_solve():
-            self.input_text.delete("1.0", "end")
-            self.input_text.insert("1.0", text)
-            self._set_status_bar(f"⚡ Hotkey: Captured {len(text)} chars — solving & blinking...")
-            self._set_pill_state("Analyzing", COLORS["accent_blue"])
-            result = self.orchestrator.process(text)
-            self.root.after(0, lambda: self._display_result(result))
-
-        self.root.after(0, run_solve)
+        self.root.after(0, show_and_solve)
 
     def _on_hotkey_capture_snip(self) -> None:
-        """Global Hotkey: Ctrl+Shift+S (Region Snip)."""
+        """Global Hotkey: Region Snip."""
         logger.info("Global hotkey: Snip OCR")
         text = capture_screen_region_with_ocr(self.config.tesseract_path)
         if text:
-            def run_solve():
-                self.input_text.delete("1.0", "end")
-                self.input_text.insert("1.0", text)
-                self._set_status_bar(f"⚡ Snip captured {len(text)} chars — solving...")
-                result = self.orchestrator.process(text)
-                self.root.after(0, lambda: self._display_result(result))
-
-            self.root.after(0, run_solve)
+            def show_and_solve():
+                self._toggle_window()
+                self._handle_capture_result(text, auto_process=True)
+            self.root.after(0, show_and_solve)
 
     def _on_hotkey_silent_ocr(self) -> None:
-        """Global Hotkey: Ctrl+Shift+O / Ctrl+Alt+O (Silent Screen OCR)."""
+        """Global Hotkey: Silent Screen OCR."""
         logger.info("Global hotkey: Silent Screen OCR")
         time.sleep(0.20)
         text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
-        if not text or not text.strip():
-            self.root.after(0, lambda: self._set_status_bar("⚠️ Silent OCR: No question text detected on active screen", "warning"))
-            return
-
-        def run_solve():
-            self.input_text.delete("1.0", "end")
-            self.input_text.insert("1.0", text)
-            self._set_status_bar(f"⚡ Silent OCR captured {len(text)} chars from screen — solving & blinking...")
-            self._set_pill_state("Analyzing", COLORS["accent_blue"])
-            result = self.orchestrator.process(text)
-            self.root.after(0, lambda: self._display_result(result, bring_to_front=False))
-
-        self.root.after(0, run_solve)
+        def show_and_solve():
+            self._toggle_window()
+            self._handle_capture_result(text, auto_process=True)
+        self.root.after(0, show_and_solve)
 
     def _on_hotkey_toggle_ui(self) -> None:
         """Global Hotkey: Ctrl+Shift+G (Toggle Window Foreground)."""
@@ -1834,6 +1802,8 @@ class GodModeApp:
             if self.root.state() == "iconic" or not self.root.winfo_viewable():
                 self.root.deiconify()
             self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.attributes("-topmost", False)
             self.root.focus_force()
         except Exception as e:
             logger.debug("Window toggle error: %s", e)
