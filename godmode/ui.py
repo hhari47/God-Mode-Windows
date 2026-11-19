@@ -315,8 +315,8 @@ class GodModeApp:
         ).pack(fill="x", padx=10, pady=(8, 4))
 
         shortcuts = [
-            ("Ctrl+Shift+S / Space", "Solve Selected"),
-            ("Ctrl+Shift+O", "Screen OCR"),
+            ("Ctrl+Alt+X", "Solve Selected"),
+            ("Ctrl+Alt+O", "Screen OCR"),
             ("Ctrl+Shift+G", "Toggle Window"),
         ]
         for key_combo, desc in shortcuts:
@@ -351,7 +351,7 @@ class GodModeApp:
 
         self.status_label = ctk.CTkLabel(
             self.status_bar_frame,
-            text="Ready — Select text (Ctrl+Shift+S or Ctrl+Alt+Space) or Screen OCR (Ctrl+Shift+O)",
+            text="Ready — Select text (Ctrl+Alt+X) or Screen OCR (Ctrl+Alt+O)",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["text_dim"],
             anchor="w",
@@ -539,7 +539,7 @@ class GodModeApp:
             ).pack()
             ctk.CTkLabel(
                 empty_frame,
-                text="Highlight text and press Ctrl+Alt+Space or click '⚡ Solve Selected' above.",
+                text="Highlight text and press Ctrl+Alt+X or click '⚡ Solve Selected' above.",
                 font=ctk.CTkFont(size=11),
                 text_color=COLORS["text_muted"],
             ).pack(pady=(4, 0))

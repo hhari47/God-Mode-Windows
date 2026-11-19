@@ -5,11 +5,11 @@ Uses Windows native user32.RegisterHotKey API to register system-wide hotkeys
 that work across all applications without requiring elevated/admin permissions.
 
 Default Hotkeys:
-  - Ctrl + Alt + Space: Silent capture selected text & execute pipeline (LED signal output)
-  - Ctrl + Alt + X: Alternative shortcut for silent text capture
-  - Ctrl + Shift + O / Ctrl + Alt + O: Silent background Screen OCR & solve (Clean display, zero popups)
-  - Ctrl + Shift + S: Region snip OCR & execute pipeline (Manual crop)
+  - Ctrl + Alt + X: Silent capture selected text & execute pipeline (LED signal output)
+  - Ctrl + Alt + O: Silent background Screen OCR & solve (Clean display, zero popups)
   - Ctrl + Shift + G: Bring GodMode window to foreground
+  - Ctrl + Alt + Space: Alternative shortcut for silent text capture
+  - Ctrl + Shift + S: Alternative shortcut for silent text capture
 """
 
 import ctypes
@@ -180,19 +180,19 @@ class GlobalHotkeyManager:
             logger.debug("Could not install low-level hook: %s", e)
 
         # Register standard hotkeys (free from Windows and Chrome shortcuts)
-        # ID 1: Ctrl + Alt + Space (Solve Selected)
-        # ID 2: Ctrl + Shift + S (Snip & Solve)
+        # ID 1: Ctrl + Alt + X (Solve Selected)
+        # ID 2: Ctrl + Alt + O (Screen OCR & Solve)
         # ID 3: Ctrl + Shift + G (Toggle UI)
-        # ID 4: Ctrl + Alt + X (Solve Selected Alternate)
-        # ID 5: Ctrl + Shift + O (Silent Screen OCR & Solve)
-        # ID 6: Ctrl + Alt + O (Silent Screen OCR & Solve Alternate)
+        # ID 4: Ctrl + Alt + Space (Solve Selected Alternate)
+        # ID 5: Ctrl + Shift + S (Solve Selected Alternate)
+        # ID 6: Ctrl + Shift + O (Screen OCR Alternate)
         hotkeys = [
-            (1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE, "Ctrl+Alt+Space (Solve Selected)"),
-            (2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_S, "Ctrl+Shift+S (Snip & Solve)"),
+            (1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_X, "Ctrl+Alt+X (Solve Selected)"),
+            (2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_O, "Ctrl+Alt+O (Screen OCR)"),
             (3, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_G, "Ctrl+Shift+G (Toggle UI)"),
-            (4, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_X, "Ctrl+Alt+X (Solve Selected Alternate)"),
-            (5, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_O, "Ctrl+Shift+O (Silent Screen OCR)"),
-            (6, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_O, "Ctrl+Alt+O (Silent Screen OCR Alternate)"),
+            (4, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE, "Ctrl+Alt+Space (Solve Selected Alternate)"),
+            (5, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_S, "Ctrl+Shift+S (Solve Selected Alternate)"),
+            (6, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_O, "Ctrl+Shift+O (Screen OCR Alternate)"),
         ]
 
         for hk_id, mod, vk, desc in hotkeys:
@@ -214,11 +214,11 @@ class GlobalHotkeyManager:
                 if msg.message == WM_HOTKEY:
                     hk_id = msg.wParam
                     logger.debug("Received WM_HOTKEY: %d", hk_id)
-                    if hk_id in (1, 2, 4):
+                    if hk_id in (1, 4, 5):
                         self._trigger_capture_text()
                     elif hk_id == 3 and self.on_toggle_ui:
                         self.on_toggle_ui()
-                    elif hk_id in (5, 6):
+                    elif hk_id in (2, 6):
                         self._trigger_silent_ocr()
 
                 user32.TranslateMessage(ctypes.byref(msg))
