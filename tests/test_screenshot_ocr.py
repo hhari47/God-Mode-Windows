@@ -173,3 +173,42 @@ class TestScreenshotOCR:
             success = exclude_window_from_capture(12345)
             assert success is True
             mock_affinity.assert_called_once_with(12345, WDA_EXCLUDEFROMCAPTURE)
+
+    def test_reading_order_group_into_lines_and_sort(self):
+        from godmode.input.screenshot_ocr import ReadingOrder, TextObservation, BoundingBox
+
+        # Words out of order in 2 lines:
+        # Line 1 (y=10): "What" (x=10), "is" (x=60), "Python?" (x=80)
+        # Line 2 (y=40): "A" (x=10), "language" (x=30)
+        obs = [
+            TextObservation("Python?", BoundingBox(80, 10, 60, 20)),
+            TextObservation("language", BoundingBox(30, 40, 70, 20)),
+            TextObservation("What", BoundingBox(10, 10, 45, 20)),
+            TextObservation("A", BoundingBox(10, 40, 15, 20)),
+            TextObservation("is", BoundingBox(60, 10, 15, 20)),
+        ]
+
+        text = ReadingOrder.joined_text(obs, strategy="topToBottomLeftToRight")
+        assert text == "What is Python?\nA language"
+
+    def test_reading_order_column_aware_ordering(self):
+        from godmode.input.screenshot_ocr import ReadingOrder, TextObservation, BoundingBox
+
+        # Two columns:
+        # Left column (x=10..150): "Left Col Line 1" (y=10), "Left Col Line 2" (y=40)
+        # Right column (x=300..450): "Right Col Line 1" (y=10), "Right Col Line 2" (y=40)
+        obs = [
+            TextObservation("Right Line 1", BoundingBox(300, 10, 100, 20)),
+            TextObservation("Left Line 1", BoundingBox(10, 10, 100, 20)),
+            TextObservation("Right Line 2", BoundingBox(300, 40, 100, 20)),
+            TextObservation("Left Line 2", BoundingBox(10, 40, 100, 20)),
+        ]
+
+        text = ReadingOrder.joined_text(obs, strategy="columnAware")
+        lines = text.split("\n")
+        assert lines == [
+            "Left Line 1",
+            "Left Line 2",
+            "Right Line 1",
+            "Right Line 2",
+        ]

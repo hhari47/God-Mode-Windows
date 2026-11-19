@@ -507,3 +507,64 @@ Mark for Review"""
         assert "Single Choice Question" not in pq.question
         assert "Clear Selection" not in [o.text for o in pq.options]
 
+    def test_bare_sequential_numbers_with_multiline_jsx_options(self):
+        """User exact exam case: deadshot.io Next.js question with bare 1, 2, 3, 4."""
+        raw = """Which line correctly links to the /contact page using Next.js?
+
+1
+
+<Link to="/contact">Contact</Link>
+
+2
+
+<a page="/contact">Contact</a>
+
+3
+
+<Link href="/contact">Contact</Link>
+
+4
+
+<Link route="/contact">Contact</Link>"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert pq.question == "Which line correctly links to the /contact page using Next.js?"
+        assert pq.options[0].text == '<Link to="/contact">Contact</Link>'
+        assert pq.options[1].text == '<a page="/contact">Contact</a>'
+        assert pq.options[2].text == '<Link href="/contact">Contact</Link>'
+        assert pq.options[3].text == '<Link route="/contact">Contact</Link>'
+
+    def test_bare_sequential_letters_with_multiline_code_options(self):
+        raw = """What is the correct syntax for React import?
+A
+import * as React from 'react';
+B
+require('react');
+C
+include React;
+D
+using React;"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert pq.options[0].text == "import * as React from 'react';"
+        assert pq.options[1].text == "require('react');"
+
+    def test_inline_code_symbol_options(self):
+        raw = """Which component is rendered?
+1 <Link href="/home">Home</Link>
+2 <a href="/home">Home</a>
+3 @Route('/home')
+4 $router->get('/home')"""
+        pq = parse_question(raw)
+        assert pq.is_valid_mcq
+        assert pq.option_count == 4
+        assert [o.label for o in pq.options] == ["A", "B", "C", "D"]
+        assert pq.options[0].text == '<Link href="/home">Home</Link>'
+        assert pq.options[1].text == '<a href="/home">Home</a>'
+        assert pq.options[2].text == "@Route('/home')"
+        assert pq.options[3].text == "$router->get('/home')"
+

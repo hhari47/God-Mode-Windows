@@ -82,7 +82,7 @@ OPTION_LINE_PATTERN = (
     r"(?:\(([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|\[([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|"
     r"(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])\s*|"
     r"(?:(?:Option|Choice|Item|Answer|Selection)\s+)(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—]\s*|\s+(?=\S))|"
-    r"([1-9][0-9]?)(?:\s+(?=[A-Za-z\"'\(\[])|(?=[A-Za-z\"'\(\[{]|-(?=[A-Za-z\-_]))))"
+    r"([1-9][0-9]?)(?:\s+(?=[A-Za-z0-9\"'\(\[<@\$/`]|-(?=[A-Za-z\-_]))|(?=[A-Za-z\"'\(\[{<@\$/`]|-(?=[A-Za-z\-_]))))"
     r"(?:\*\*|\*|__|_)?\s*(.*)$"
 )
 option_line_regex = re.compile(OPTION_LINE_PATTERN)
@@ -93,10 +93,11 @@ UNNUMBERED_MARKER_PATTERN = (
 unnumbered_marker_regex = re.compile(UNNUMBERED_MARKER_PATTERN)
 
 STANDALONE_LABEL_PATTERN = (
-    r"^[\s]*(?:(?:\(([xX\s✓✔]?)\)|\[([xX\s✓✔]?)\]|([•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}))\s*)?"
+    r"^[\s]*(?:(?:\(([xX\s✓✔]?)\)|\[([xX\s✓✔]?)\]|([•·⁃◦▪▫–—\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}|\-(?=\s)))\s*)?"
     r"(?:\*\*|\*|__|_)?(?:(?:Option|Choice|Item|Answer|Selection)\s+([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})|"
     r"(?:\(([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|\[([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|"
-    r"(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])))[\s]*$"
+    r"(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])|"
+    r"([1-9][0-9]?|[A-Za-z])))[\s]*$"
 )
 standalone_label_regex = re.compile(STANDALONE_LABEL_PATTERN)
 
@@ -106,7 +107,7 @@ INLINE_CANDIDATE_PATTERN = (
     r"(?:\*\*|\*|__|_)?(?:(?:Option|Choice|Item|Answer|Selection)\s+)?"
     r"(?:\(([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|\[([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|"
     r"(?<![A-Za-z])(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])|"
-    r"([1-9][0-9]?)(?:\s+(?=[A-Za-z\"'\(\[])|(?=[A-Za-z\"'\(\[{]|-(?=[A-Za-z\-_]))))(?:\*\*|\*|__|_)?(?:\s+|$)"
+    r"([1-9][0-9]?)(?:\s+(?=[A-Za-z0-9\"'\(\[<@\$/`]|-(?=[A-Za-z\-_]))|(?=[A-Za-z\"'\(\[{<@\$/`]|-(?=[A-Za-z\-_]))))(?:\*\*|\*|__|_)?(?:\s+|$)"
 )
 inline_candidate_regex = re.compile(INLINE_CANDIDATE_PATTERN)
 
@@ -417,7 +418,11 @@ def split_multi_option_lines(lines: list[str]) -> list[str]:
     return res
 
 
-def match_option_prefix(line: str) -> dict | None:
+def match_option_prefix(
+    line: str,
+    next_expected_num: int | None = None,
+    next_expected_char: str | None = None,
+) -> dict | None:
     """Matches an option prefix at the start of a line."""
     if time_prefix_regex.match(line):
         return None
@@ -507,12 +512,30 @@ def match_option_prefix(line: str) -> dict | None:
             is_selected = detect_selection_state(marker)
 
         label = None
-        for g in range(4, 8):
+        for g in range(4, 9):
             if m_st.group(g) is not None:
                 label = m_st.group(g)
                 break
 
         if label:
+            # Check if this is a bare label without punctuation (group 8)
+            is_bare = (m_st.group(8) is not None)
+            if is_bare:
+                if label.isdigit():
+                    num = int(label)
+                    if next_expected_num is None:
+                        if num != 1:
+                            return None
+                    elif num != next_expected_num:
+                        return None
+                elif len(label) == 1 and label.isalpha():
+                    ch = label.upper()
+                    if next_expected_char is None:
+                        if ch != "A":
+                            return None
+                    elif ch != next_expected_char:
+                        return None
+
             return {
                 "label": label,
                 "rest": "",
@@ -580,7 +603,7 @@ def parse_collapsed_sequential_options(text: str) -> tuple[str, list[Option]] | 
     # Try numeric collapsed
     opt1_pat = (
         r"(?:^|[\s\?.:;!\"\'\`\)\],/\->\w\uFFFC])"
-        r"(?:\(([1])\)|\[([1])\]|([1])(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|([1])\s+(?=[A-Za-z0-9\"\'\`\(\[\{]|-(?=[A-Za-z\-_]))|([1])(?=[A-Za-z\"\'\`\(\[\{]|-(?=[A-Za-z\-_])))"
+        r"(?:\(([1])\)|\[([1])\]|([1])(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|([1])\s+(?=[A-Za-z0-9\"\'\`\(\[\{<@\$/`]|-(?=[A-Za-z\-_]))|([1])(?=[A-Za-z\"\'\`\(\[\{<@\$/`]|-(?=[A-Za-z\-_])))"
     )
     m1_list = list(re.finditer(opt1_pat, text))
     if m1_list:
@@ -595,7 +618,7 @@ def parse_collapsed_sequential_options(text: str) -> tuple[str, list[Option]] | 
                 next_pat = (
                     r"(?:^|[\s\?.:;!\"\'\`\)\],/\->\w\uFFFC])"
                     rf"(?:\(({num_str})\)|\[({num_str})\]|({num_str})(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|"
-                    rf"({num_str})\s+(?=[A-Za-z0-9\"\'\`\(\[\{{]|-(?=[A-Za-z\-_]))|({num_str})(?=[A-Za-z\"\'\`\(\[\{{]|-(?=[A-Za-z\-_])))"
+                    rf"({num_str})\s+(?=[A-Za-z0-9\"\'\`\(\[\{{<@\$/`]|-(?=[A-Za-z\-_]))|({num_str})(?=[A-Za-z\"\'\`\(\[\{{<@\$/`]|-(?=[A-Za-z\-_])))"
                 )
                 m_next = re.search(next_pat, text[curr_start:])
                 if not m_next:
@@ -625,7 +648,7 @@ def parse_collapsed_sequential_options(text: str) -> tuple[str, list[Option]] | 
     letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
     opt_a_pat = (
         r"(?:^|[\s\?.:;!\"\'\`\)\],/\->])"
-        r"(?:\(([Aa])\)|\[([Aa])\]|([A])(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|([A])\s+(?=[A-Za-z0-9\"\'\`\(\[\{]|-(?=[A-Za-z\-_]))|([A])(?=[A-Z\"\'\`\(\[\{]))"
+        r"(?:\(([Aa])\)|\[([Aa])\]|([A])(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|([A])\s+(?=[A-Za-z0-9\"\'\`\(\[\{<@\$/`]|-(?=[A-Za-z\-_]))|([A])(?=[A-Z\"\'\`\(\[\{<@\$/`]))"
     )
     ma_list = list(re.finditer(opt_a_pat, text))
     if ma_list:
@@ -641,7 +664,7 @@ def parse_collapsed_sequential_options(text: str) -> tuple[str, list[Option]] | 
                 next_pat = (
                     r"(?:^|[\s\?.:;!\"\'\`\)\],/\->])"
                     rf"(?:\(([{nl}{nl_low}])\)|\[([{nl}{nl_low}])\]|({nl})(?:(?:\.(?!\d)|[\)\:])\s*|\s*-\s+)|"
-                    rf"({nl})\s+(?=[A-Za-z0-9\"\'\`\(\[\{{]|-(?=[A-Za-z\-_]))|({nl})(?=[A-Z\"\'\`\(\[\{{]))"
+                    rf"({nl})\s+(?=[A-Za-z0-9\"\'\`\(\[\{{<@\$/`]|-(?=[A-Za-z\-_]))|({nl})(?=[A-Z\"\'\`\(\[\{{<@\$/`]))"
                 )
                 m_next = re.search(next_pat, text[curr_start:])
                 if not m_next:
@@ -872,6 +895,12 @@ def parse_unnumbered_lines(text: str) -> tuple[str, list[Option]] | None:
                 stem_entries = non_empty[:-k]
                 stem_text = " ".join(t for _, t in stem_entries).lower()
 
+                # If candidate_opts mixes single-digit numbers and text, it's not a valid unnumbered set
+                has_digit_lines = any(opt_text.isdigit() for _, opt_text in candidate_opts)
+                all_digit_lines = all(opt_text.isdigit() for _, opt_text in candidate_opts)
+                if has_digit_lines and not all_digit_lines:
+                    continue
+
                 all_valid_opts = True
                 opt_texts = set()
                 for _, opt_text in candidate_opts:
@@ -1039,6 +1068,8 @@ def parse_question(raw_input: str) -> ParsedQuestion:
     current_option_lines: list[str] = []
     next_idx = 0
     strategy_used = "line_by_line_parser"
+    expected_num: int | None = None
+    expected_char: str | None = None
 
     for line in lines:
         line_trimmed = line.strip()
@@ -1052,7 +1083,7 @@ def parse_question(raw_input: str) -> ParsedQuestion:
         if is_ui_noise_line(line_trimmed):
             continue
 
-        match = match_option_prefix(line_trimmed)
+        match = match_option_prefix(line_trimmed, next_expected_num=expected_num, next_expected_char=expected_char)
         if match is not None:
             # Check if this numeric prefix is actually code (e.g. 1. int sum = 0;)
             if match["label"] and match["label"].isdigit() and (_is_code_line(match["rest"]) or _is_code_line(line_trimmed)):
@@ -1080,6 +1111,17 @@ def parse_question(raw_input: str) -> ParsedQuestion:
             current_label = assigned_label
             if match["rest"]:
                 current_option_lines.append(match["rest"])
+
+            # Update expected next sequential bare label
+            if assigned_label.isdigit():
+                expected_num = int(assigned_label) + 1
+                expected_char = None
+            elif len(assigned_label) == 1 and assigned_label.isalpha():
+                expected_char = chr(ord(assigned_label.upper()) + 1)
+                expected_num = None
+            else:
+                expected_num = None
+                expected_char = None
         elif current_label is not None:
             # Continuation line of current option (MULTILINE OPTION!)
             current_option_lines.append(line_trimmed)
@@ -1101,6 +1143,11 @@ def parse_question(raw_input: str) -> ParsedQuestion:
             original_raw=f"{current_label}) {opt_text}",
             original_label=current_label,
         ))
+
+    # If all parsed options have empty text (e.g. standalone numbers without body text),
+    # they are not labeled options; drop them so fallbacks (like parse_unnumbered_lines) can process them
+    if parsed_options and all(not opt.text for opt in parsed_options):
+        parsed_options = []
 
     cleaned_stem = "\n".join(stem_lines).strip()
 

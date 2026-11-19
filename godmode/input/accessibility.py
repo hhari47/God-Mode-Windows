@@ -435,9 +435,15 @@ def _has_multiple_options(text: str) -> bool:
     """Quick check if text contains 2 or more multiple-choice option markers."""
     if not text or len(text.strip()) < 10:
         return False
-    # Matches A), B) or 1., 2. or (A), (B) or [A], [B] or bullet markers
+    try:
+        from godmode.parser import parse_question
+        pq = parse_question(text)
+        if len(pq.options) >= 2:
+            return True
+    except Exception:
+        pass
     matches = re.findall(
-        r"(?:^|[\n\r])\s*(?:\([A-Ja-j1-9]\)|\[[A-Ja-j1-9]\]|[A-Ja-j1-9][\.\)\:\-]|[•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔])\s+\S",
+        r"(?:^|[\n\r])\s*(?:\([A-Ja-j1-9]\)|\[[A-Ja-j1-9]\]|[A-Ja-j1-9][\.\)\:\-]|[1-9][0-9]?|[A-Ja-j]|[•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔])(?:\s+|$|\n)",
         text,
     )
     return len(matches) >= 2

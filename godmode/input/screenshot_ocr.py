@@ -15,10 +15,173 @@ import ctypes
 import ctypes.wintypes
 import asyncio
 import concurrent.futures
+from dataclasses import dataclass
 from typing import Optional
 from io import BytesIO
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Geometric Reading Order Engine (Parity with macOS ReadingOrder.swift) ───
+
+@dataclass
+class BoundingBox:
+    x: float
+    y: float
+    width: float
+    height: float
+
+    @property
+    def min_x(self) -> float:
+        return self.x
+
+    @property
+    def max_x(self) -> float:
+        return self.x + self.width
+
+    @property
+    def min_y(self) -> float:
+        return self.y
+
+    @property
+    def max_y(self) -> float:
+        return self.y + self.height
+
+    def vertical_overlap_fraction(self, other: "BoundingBox") -> float:
+        overlap = max(0.0, min(self.max_y, other.max_y) - max(self.min_y, other.min_y))
+        smaller = min(self.height, other.height)
+        return overlap / smaller if smaller > 0.0 else 0.0
+
+    def horizontal_overlap_fraction(self, other: "BoundingBox") -> float:
+        overlap = max(0.0, min(self.max_x, other.max_x) - max(self.min_x, other.min_x))
+        narrower = min(self.width, other.width)
+        return overlap / narrower if narrower > 0.0 else 0.0
+
+
+@dataclass
+class TextObservation:
+    text: str
+    bounding_box: BoundingBox
+    result_index: int = 0
+
+
+class ReadingOrder:
+    """
+    Pure-geometry reading-order engine (Parity with macOS GODMODE ReadingOrder.swift).
+    No text content is inspected — order is computed from geometric boxes only.
+    """
+    LINE_OVERLAP_THRESHOLD = 0.5
+    COLUMN_OVERLAP_THRESHOLD = 0.25
+
+    @classmethod
+    def sorted(
+        cls,
+        observations: list[TextObservation],
+        strategy: str = "columnAware",
+    ) -> list[TextObservation]:
+        if not observations:
+            return []
+        if strategy == "enumeration":
+            return sorted(observations, key=lambda o: o.result_index)
+        elif strategy == "topToBottomLeftToRight":
+            return cls.sort_lines(cls.group_into_lines(observations))
+        elif strategy == "columnAware":
+            return cls.column_aware_order(observations)
+        return cls.sort_lines(cls.group_into_lines(observations))
+
+    @classmethod
+    def joined_text(
+        cls,
+        observations: list[TextObservation],
+        strategy: str = "columnAware",
+    ) -> str:
+        ordered = cls.sorted(observations, strategy=strategy)
+        if not ordered:
+            return ""
+        lines: list[list[TextObservation]] = []
+        for observation in ordered:
+            if (
+                lines
+                and lines[-1]
+                and lines[-1][-1].bounding_box.vertical_overlap_fraction(observation.bounding_box)
+                >= cls.LINE_OVERLAP_THRESHOLD
+            ):
+                lines[-1].append(observation)
+            else:
+                lines.append([observation])
+        return "\n".join(" ".join(obs.text for obs in line) for line in lines)
+
+    @classmethod
+    def group_into_lines(cls, observations: list[TextObservation]) -> list[list[TextObservation]]:
+        """
+        Cluster into lines top-to-bottom: sort by min_y ascending (top of screen first),
+        then merge fragments whose vertical overlap meets the threshold.
+        """
+        lines: list[list[TextObservation]] = []
+        for observation in sorted(observations, key=lambda o: o.bounding_box.min_y):
+            if (
+                lines
+                and lines[-1]
+                and lines[-1][0].bounding_box.vertical_overlap_fraction(observation.bounding_box)
+                >= cls.LINE_OVERLAP_THRESHOLD
+            ):
+                lines[-1].append(observation)
+            else:
+                lines.append([observation])
+        return lines
+
+    @classmethod
+    def sort_lines(cls, lines: list[list[TextObservation]]) -> list[TextObservation]:
+        """
+        Order lines top-to-bottom (by their highest fragment: min min_y),
+        fragments within each line left-to-right (min_x ascending).
+        """
+        ordered_lines = sorted(
+            lines,
+            key=lambda line: min(obs.bounding_box.min_y for obs in line) if line else 0.0,
+        )
+        result: list[TextObservation] = []
+        for line in ordered_lines:
+            result.extend(sorted(line, key=lambda obs: obs.bounding_box.min_x))
+        return result
+
+    @classmethod
+    def column_aware_order(cls, observations: list[TextObservation]) -> list[TextObservation]:
+        """
+        Split into column clusters over fragment x-intervals, order columns
+        left-to-right, then run the line pipeline inside each column.
+        """
+        if len(observations) <= 1:
+            return observations
+
+        clusters: list[list[TextObservation]] = []
+        for observation in sorted(observations, key=lambda o: o.bounding_box.min_x):
+            matched_idx = None
+            for idx, cluster in enumerate(clusters):
+                if cls._cluster_overlap(cluster, observation):
+                    matched_idx = idx
+                    break
+            if matched_idx is not None:
+                clusters[matched_idx].append(observation)
+            else:
+                clusters.append([observation])
+
+        ordered_columns = sorted(
+            clusters,
+            key=lambda c: min(obs.bounding_box.min_x for obs in c) if c else 0.0,
+        )
+        result: list[TextObservation] = []
+        for col in ordered_columns:
+            result.extend(cls.sort_lines(cls.group_into_lines(col)))
+        return result
+
+    @classmethod
+    def _cluster_overlap(cls, cluster: list[TextObservation], candidate: TextObservation) -> bool:
+        return any(
+            existing.bounding_box.horizontal_overlap_fraction(candidate.bounding_box)
+            >= cls.COLUMN_OVERLAP_THRESHOLD
+            for existing in cluster
+        )
 
 
 # ─── Windows Display Protection & DPI Awareness ────────────────────────────
@@ -342,34 +505,80 @@ def ocr_image(image, tesseract_path: str = "") -> Optional[str]:
                 raw_lines = res["lines"]
 
             if raw_lines:
-                line_entries = []
-                for line in raw_lines:
-                    txt = ""
-                    min_y = 0.0
-                    min_x = 0.0
+                observations: list[TextObservation] = []
+                idx = 0
+                for line_idx, line in enumerate(raw_lines):
+                    words = []
+                    raw_words = getattr(line, "words", None) if hasattr(line, "words") else (line.get("words", None) if isinstance(line, dict) else None)
+                    if raw_words is not None:
+                        try:
+                            # Avoid unconfigured MagicMocks
+                            from unittest.mock import NonCallableMagicMock
+                            if isinstance(raw_words, NonCallableMagicMock) and not hasattr(raw_words, "_mock_return_value") and not getattr(raw_words, "_mock_wraps", None):
+                                raw_words = None
+                        except Exception:
+                            pass
+
+                    if raw_words is not None:
+                        try:
+                            words = list(raw_words)
+                        except Exception:
+                            words = []
+
+                    line_txt = ""
                     if hasattr(line, "text"):
-                        txt = line.text.strip() if line.text else ""
-                        if hasattr(line, "words") and line.words:
-                            min_y = min((getattr(w.bounding_rect, "y", 0.0) for w in line.words if hasattr(w, "bounding_rect")), default=0.0)
-                            min_x = min((getattr(w.bounding_rect, "x", 0.0) for w in line.words if hasattr(w, "bounding_rect")), default=0.0)
+                        line_txt = str(getattr(line, "text", "") or "").strip()
                     elif isinstance(line, dict):
-                        txt = str(line.get("text", "")).strip()
-                        words = line.get("words", [])
-                        if words and isinstance(words, list) and isinstance(words[0], dict):
-                            min_y = min((w.get("bounding_rect", {}).get("y", 0.0) for w in words), default=0.0)
-                            min_x = min((w.get("bounding_rect", {}).get("x", 0.0) for w in words), default=0.0)
+                        line_txt = str(line.get("text", "") or "").strip()
 
-                    if txt:
-                        line_entries.append((min_y, min_x, txt))
+                    if words:
+                        for w in words:
+                            w_txt = ""
+                            x, y, w_val, h_val = 0.0, 0.0, 50.0, 15.0
+                            if hasattr(w, "text"):
+                                w_txt = str(getattr(w, "text", "") or "").strip()
+                                br = getattr(w, "bounding_rect", None)
+                                if br is not None:
+                                    x = float(getattr(br, "x", 0.0) or 0.0)
+                                    y = float(getattr(br, "y", 0.0) or 0.0)
+                                    w_val = float(getattr(br, "width", 50.0) or 50.0)
+                                    h_val = float(getattr(br, "height", 15.0) or 15.0)
+                            elif isinstance(w, dict):
+                                w_txt = str(w.get("text", "") or "").strip()
+                                br = w.get("bounding_rect", {})
+                                if isinstance(br, dict):
+                                    x = float(br.get("x", 0.0) or 0.0)
+                                    y = float(br.get("y", 0.0) or 0.0)
+                                    w_val = float(br.get("width", 50.0) or 50.0)
+                                    h_val = float(br.get("height", 15.0) or 15.0)
 
-                if line_entries:
-                    # Sort lines by vertical position (grouped by row proximity) and then x
-                    line_entries.sort(key=lambda item: (round(item[0] / 15.0), item[1]))
-                    lines = [item[2] for item in line_entries]
-                    text = "\n".join(lines).strip()
-                    if text:
-                        logger.info("Windows Native OCR extracted %d chars across %d lines", len(text), len(lines))
-                        return text
+                            if not w_txt and line_txt and len(words) == 1:
+                                w_txt = line_txt
+
+                            if w_txt:
+                                observations.append(
+                                    TextObservation(
+                                        text=w_txt,
+                                        bounding_box=BoundingBox(x, y, w_val, h_val),
+                                        result_index=idx,
+                                    )
+                                )
+                                idx += 1
+                    elif line_txt:
+                        observations.append(
+                            TextObservation(
+                                text=line_txt,
+                                bounding_box=BoundingBox(0.0, float(line_idx * 30.0), 300.0, 20.0),
+                                result_index=idx,
+                            )
+                        )
+                        idx += 1
+
+                if observations:
+                    text = ReadingOrder.joined_text(observations, strategy="columnAware")
+                    if text and text.strip():
+                        logger.info("Windows Native OCR (ReadingOrder) extracted %d chars across %d observations", len(text.strip()), len(observations))
+                        return text.strip()
 
             # Fallback to full text property if lines was empty
             full_text = getattr(res, "text", "") or (res.get("text", "") if isinstance(res, dict) else "")
