@@ -52,10 +52,10 @@ class TestGlobalHotkeyManager:
                 manager._running = True
                 manager._msg_loop()
 
-        # Should register 6 hotkeys (Space, S, G, X, Shift+O, Alt+O)
-        assert mock_register.call_count == 6
+        # Should register 2 hotkeys (Ctrl+Alt+X, Ctrl+Alt+O)
+        assert mock_register.call_count == 2
         # Should unregister on cleanup
-        assert mock_unregister.call_count == 6
+        assert mock_unregister.call_count == 2
 
     def test_trigger_silent_ocr_callback(self):
         cb_called = False

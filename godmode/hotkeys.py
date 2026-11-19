@@ -4,12 +4,9 @@ Global Hotkey Manager for Windows — Background Native Triggers.
 Uses Windows native user32.RegisterHotKey API to register system-wide hotkeys
 that work across all applications without requiring elevated/admin permissions.
 
-Default Hotkeys:
+Exclusive Hotkeys:
   - Ctrl + Alt + X: Silent capture selected text & execute pipeline (LED signal output)
   - Ctrl + Alt + O: Silent background Screen OCR & solve (Clean display, zero popups)
-  - Ctrl + Shift + G: Bring GodMode window to foreground
-  - Ctrl + Alt + Space: Alternative shortcut for silent text capture
-  - Ctrl + Shift + S: Alternative shortcut for silent text capture
 """
 
 import ctypes
@@ -116,31 +113,25 @@ class GlobalHotkeyManager:
         if nCode >= 0:
             try:
                 kb = KBDLLHOOKSTRUCT.from_address(lParam)
-                if kb.vkCode in (VK_SPACE, VK_X, VK_S):
+                if kb.vkCode == VK_X:
                     if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                         ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
                         alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                        shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
-                        if ctrl and (alt or shift):
+                        if ctrl and alt:
                             if not self._space_down:
                                 self._space_down = True
-                                logger.info(
-                                    "Triggered via low-level hook: Ctrl + %s + %s",
-                                    "Alt" if alt else "Shift",
-                                    "Space" if kb.vkCode == VK_SPACE else chr(kb.vkCode)
-                                )
+                                logger.info("Triggered via low-level hook: Ctrl + Alt + X (Solve Selected)")
                                 self._trigger_capture_text()
                     elif wParam in (WM_KEYUP, WM_SYSKEYUP):
                         self._space_down = False
                 elif kb.vkCode == VK_O:
                     if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                         ctrl = bool(user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
-                        shift = bool(user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
                         alt = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
-                        if ctrl and (shift or alt):
+                        if ctrl and alt:
                             if not self._o_down:
                                 self._o_down = True
-                                logger.info("Triggered via low-level hook: Ctrl + %s + O (Silent OCR)", "Shift" if shift else "Alt")
+                                logger.info("Triggered via low-level hook: Ctrl + Alt + O (Screen OCR)")
                                 self._trigger_silent_ocr()
                     elif wParam in (WM_KEYUP, WM_SYSKEYUP):
                         self._o_down = False
@@ -179,20 +170,12 @@ class GlobalHotkeyManager:
         except Exception as e:
             logger.debug("Could not install low-level hook: %s", e)
 
-        # Register standard hotkeys (free from Windows and Chrome shortcuts)
+        # Register exclusively the two main hotkeys:
         # ID 1: Ctrl + Alt + X (Solve Selected)
         # ID 2: Ctrl + Alt + O (Screen OCR & Solve)
-        # ID 3: Ctrl + Shift + G (Toggle UI)
-        # ID 4: Ctrl + Alt + Space (Solve Selected Alternate)
-        # ID 5: Ctrl + Shift + S (Solve Selected Alternate)
-        # ID 6: Ctrl + Shift + O (Screen OCR Alternate)
         hotkeys = [
             (1, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_X, "Ctrl+Alt+X (Solve Selected)"),
             (2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_O, "Ctrl+Alt+O (Screen OCR)"),
-            (3, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_G, "Ctrl+Shift+G (Toggle UI)"),
-            (4, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE, "Ctrl+Alt+Space (Solve Selected Alternate)"),
-            (5, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_S, "Ctrl+Shift+S (Solve Selected Alternate)"),
-            (6, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_O, "Ctrl+Shift+O (Screen OCR Alternate)"),
         ]
 
         for hk_id, mod, vk, desc in hotkeys:
@@ -214,11 +197,9 @@ class GlobalHotkeyManager:
                 if msg.message == WM_HOTKEY:
                     hk_id = msg.wParam
                     logger.debug("Received WM_HOTKEY: %d", hk_id)
-                    if hk_id in (1, 4, 5):
+                    if hk_id == 1:
                         self._trigger_capture_text()
-                    elif hk_id == 3 and self.on_toggle_ui:
-                        self.on_toggle_ui()
-                    elif hk_id in (2, 6):
+                    elif hk_id == 2:
                         self._trigger_silent_ocr()
 
                 user32.TranslateMessage(ctypes.byref(msg))

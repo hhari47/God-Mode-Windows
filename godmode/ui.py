@@ -317,7 +317,6 @@ class GodModeApp:
         shortcuts = [
             ("Ctrl+Alt+X", "Solve Selected"),
             ("Ctrl+Alt+O", "Screen OCR"),
-            ("Ctrl+Shift+G", "Toggle Window"),
         ]
         for key_combo, desc in shortcuts:
             row = ctk.CTkFrame(sc_card, fg_color="transparent")
