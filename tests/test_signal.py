@@ -84,6 +84,19 @@ class TestSignalCoordinator:
         # Out of bounds (> 10) -> rejected
         assert signal_answer(11) is False
 
+    @patch("godmode.signal.user32.keybd_event")
+    @patch("godmode.signal.time.sleep")
+    def test_keybd_event_toggle_uses_kb177674_extended_keys(self, mock_sleep, mock_keybd):
+        from godmode.signal import _keybd_event_toggle, VK_CAPITAL, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP
+        with patch("godmode.signal.get_capslock_state", side_effect=[False, True]):
+            _keybd_event_toggle()
+            # Must call keybd_event with VK_CAPITAL and KEYEVENTF_EXTENDEDKEY (0x45)
+            assert mock_keybd.call_count >= 2
+            # Key down
+            mock_keybd.assert_any_call(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY, 0)
+            # Key up
+            mock_keybd.assert_any_call(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+
     @patch("godmode.signal.signal_answer")
     def test_signal_answer_async(self, mock_signal):
         thread = signal_answer_async(2, duration_ms=50)

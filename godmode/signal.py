@@ -110,33 +110,62 @@ def _send_input_toggle() -> bool:
 
 
 def _keybd_event_toggle() -> None:
-    """Toggle Caps Lock using keybd_event with hardware scan code 0x3A (non-extended)."""
-    user32.keybd_event(VK_CAPITAL, 0x3A, 0, 0)
-    time.sleep(0.02)
-    user32.keybd_event(VK_CAPITAL, 0x3A, KEYEVENTF_KEYUP, 0)
-    time.sleep(0.01)
+    """
+    Toggle Caps Lock simulating a physical key press and release.
+    Uses Win32 extended key (Microsoft KB177674 standard: VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY)
+    with a hardware-reliable 70ms hold time so laptop keyboard embedded controllers (EC)
+    register the physical key press and latch the Caps Lock LED.
+    Also executes standard scan code 0x3A and pynput as fallback if state did not toggle.
+    """
+    initial = get_capslock_state()
+
+    # Primary: Win32 Extended Key standard (0x45) with 70ms debounce-safe hold
+    try:
+        user32.keybd_event(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY, 0)
+        time.sleep(0.07)
+        user32.keybd_event(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+        time.sleep(0.03)
+        if get_capslock_state() != initial:
+            return
+    except Exception as e:
+        logger.debug("Extended keybd_event (0x45) failed: %s", e)
+
+    # Secondary: Standard scan code 0x3A with 70ms hold
+    try:
+        user32.keybd_event(VK_CAPITAL, 0x3A, 0, 0)
+        time.sleep(0.07)
+        user32.keybd_event(VK_CAPITAL, 0x3A, KEYEVENTF_KEYUP, 0)
+        time.sleep(0.03)
+        if get_capslock_state() != initial:
+            return
+    except Exception as e:
+        logger.debug("Scan code 0x3A keybd_event failed: %s", e)
+
+    # Tertiary: pynput controller (uses SendInput with low-level keyboard hook)
+    if _pynput_ctrl is not None:
+        try:
+            _pynput_ctrl.press(PynputKey.caps_lock)
+            time.sleep(0.07)
+            _pynput_ctrl.release(PynputKey.caps_lock)
+            time.sleep(0.03)
+            if get_capslock_state() != initial:
+                return
+        except Exception as e:
+            logger.debug("pynput Caps Lock toggle failed: %s", e)
+
+    # Quaternary: SendInput
+    try:
+        _send_input_toggle()
+    except Exception:
+        pass
 
 
 def _toggle_capslock() -> None:
     """
     Toggle Caps Lock simulating a key press and release.
-    Uses native Windows keybd_event with scan code 0x3A.
-    Executes exactly ONE method per toggle to prevent double-tap cancellation.
+    Delegates to _keybd_event_toggle which handles resilient multi-tiered pulsing.
     """
-    try:
-        _keybd_event_toggle()
-        return
-    except Exception as e:
-        logger.debug("keybd_event toggle failed: %s", e)
-
-    if _send_input_toggle():
-        return
-
-    if _pynput_ctrl is not None:
-        try:
-            _pynput_ctrl.tap(PynputKey.caps_lock)
-        except Exception:
-            pass
+    _keybd_event_toggle()
 
 
 def set_capslock(desired_state: bool, current_hint: Optional[bool] = None) -> bool:

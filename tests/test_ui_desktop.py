@@ -98,4 +98,39 @@ def test_ui_color_palette():
     assert COLORS["bg_window"] == "#090D16"
     assert COLORS["accent_blue"] == "#38BDF8"
     assert COLORS["accent_green"] == "#10B981"
+
+
+def test_covert_hotkey_solve_never_opens_window(mock_app):
+    """Ensure pressing hotkeys solves covertly without deiconifying or opening window."""
+    mock_app._toggle_window = MagicMock()
+    mock_app._handle_capture_result = MagicMock()
+
+    with patch("godmode.ui.capture_selected_text", return_value="What is 2+2?\nA) 3\nB) 4"), \
+         patch("time.sleep"):
+        mock_app._on_hotkey_capture_text()
+        # Find queued function in root.after
+        assert mock_app.root.after.called
+        queued_fn = mock_app.root.after.call_args[0][1]
+        queued_fn()
+
+        # _toggle_window MUST NOT be called!
+        mock_app._toggle_window.assert_not_called()
+        # Result handler MUST be called with auto_process=True
+        mock_app._handle_capture_result.assert_called_once_with("What is 2+2?\nA) 3\nB) 4", auto_process=True)
+
+
+def test_covert_silent_ocr_hotkey_never_opens_window(mock_app):
+    """Ensure silent OCR hotkey operates 100% in background without popping window."""
+    mock_app._toggle_window = MagicMock()
+    mock_app._handle_capture_result = MagicMock()
+
+    with patch("godmode.ui.capture_screen_and_ocr", return_value="What is 3+3?\nA) 5\nB) 6"), \
+         patch("time.sleep"):
+        mock_app._on_hotkey_silent_ocr()
+        assert mock_app.root.after.called
+        queued_fn = mock_app.root.after.call_args[0][1]
+        queued_fn()
+
+        mock_app._toggle_window.assert_not_called()
+        mock_app._handle_capture_result.assert_called_once_with("What is 3+3?\nA) 5\nB) 6", auto_process=True)
     assert COLORS["bg_sidebar"] == "#0E131F"

@@ -1755,7 +1755,7 @@ class GodModeApp:
     # ── Hotkey Listeners ──────────────────────────────────────────────────
 
     def _on_hotkey_capture_text(self) -> None:
-        """Global Hotkey: Capture selected text, redirect to GodMode, solve & blink."""
+        """Global Hotkey: Capture selected text, solve silently in background, pulse LED."""
         logger.info("Global hotkey: Solve selected text")
         time.sleep(0.3)
         text = capture_selected_text()
@@ -1765,31 +1765,32 @@ class GodModeApp:
             logger.info("Text capture empty — attempting Screen OCR fallback")
             text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
 
-        def show_and_solve():
-            self._toggle_window()
+        def solve_silently():
+            # Covert execution: never bring window to front or steal focus
             self._handle_capture_result(text, auto_process=True)
 
-        self.root.after(0, show_and_solve)
+        self.root.after(0, solve_silently)
 
     def _on_hotkey_capture_snip(self) -> None:
         """Global Hotkey: Region Snip."""
         logger.info("Global hotkey: Snip OCR")
         text = capture_screen_region_with_ocr(self.config.tesseract_path)
         if text:
-            def show_and_solve():
-                self._toggle_window()
+            def solve_silently():
                 self._handle_capture_result(text, auto_process=True)
-            self.root.after(0, show_and_solve)
+            self.root.after(0, solve_silently)
 
     def _on_hotkey_silent_ocr(self) -> None:
         """Global Hotkey: Silent Screen OCR."""
         logger.info("Global hotkey: Silent Screen OCR")
         time.sleep(0.20)
         text = capture_screen_and_ocr(tesseract_path=self.config.tesseract_path)
-        def show_and_solve():
-            self._toggle_window()
+
+        def solve_silently():
+            # Covert execution: never bring window to front or steal focus
             self._handle_capture_result(text, auto_process=True)
-        self.root.after(0, show_and_solve)
+
+        self.root.after(0, solve_silently)
 
     def _on_hotkey_toggle_ui(self) -> None:
         """Global Hotkey: Ctrl+Shift+G (Toggle Window Foreground)."""
