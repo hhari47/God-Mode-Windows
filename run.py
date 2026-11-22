@@ -34,6 +34,18 @@ def main():
     logger.info("GodMode for Windows v2.0.0 (Standalone Desktop)")
     logger.info("=" * 50)
 
+    # Check Single Instance Named Mutex
+    import ctypes
+    ERROR_ALREADY_EXISTS = 183
+    mutex_name = "Global\\GodModeWindows_SingleInstance_Mutex_v2"
+    kernel32 = ctypes.windll.kernel32
+    mutex_handle = kernel32.CreateMutexW(None, True, mutex_name)
+    last_error = kernel32.GetLastError()
+    if last_error == ERROR_ALREADY_EXISTS:
+        logger.warning("Another instance of GodMode is already running. Exiting.")
+        print("[WARNING] Another instance of GodMode is already running in background.")
+        sys.exit(0)
+
     # Load configuration
     from godmode.config import load_config
     config = load_config()

@@ -1450,7 +1450,9 @@ class GodModeApp:
         threading.Thread(target=do_capture, daemon=True).start()
 
     def _on_screenshot_done(self, text: Optional[str]) -> None:
-        self.root.deiconify()
+        # Keep window in background if minimized to tray (covert operation)
+        if not self.config.minimize_to_tray and self.root.state() != "withdrawn":
+            self.root.deiconify()
         self._handle_capture_result(text, auto_process=True)
 
     def _handle_capture_result(self, text: Optional[str], auto_process: bool = False) -> None:

@@ -26,6 +26,13 @@ build/
 *.spec
 *.egg-info/
 
+# .NET / C# Build Outputs
+bin/
+obj/
+publish/
+*.user
+*.suo
+
 # IDE / Editor
 .vscode/
 .idea/

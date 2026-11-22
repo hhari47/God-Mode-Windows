@@ -119,18 +119,16 @@ def _keybd_event_toggle() -> None:
     """
     initial = get_capslock_state()
 
-    # Primary: Win32 Extended Key standard (0x45) with 70ms debounce-safe hold
+    # Primary: Win32 Extended Key standard (0x45) with 70ms debounce-safe hold (KB177674)
     try:
         user32.keybd_event(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY, 0)
         time.sleep(0.07)
         user32.keybd_event(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
         time.sleep(0.03)
-        if get_capslock_state() != initial:
-            return
     except Exception as e:
         logger.debug("Extended keybd_event (0x45) failed: %s", e)
 
-    # Secondary: Standard scan code 0x3A with 70ms hold
+    # Secondary: Universal standard scan code 0x3A (physical Caps Lock on PCs/laptops) with 70ms hold
     try:
         user32.keybd_event(VK_CAPITAL, 0x3A, 0, 0)
         time.sleep(0.07)
