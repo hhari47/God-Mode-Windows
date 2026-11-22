@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -35,12 +35,8 @@ namespace GodMode.Wpf
                 _hasMutexOwnership = isNewInstance;
                 if (!isNewInstance)
                 {
-                    System.Windows.MessageBox.Show(
-                        "GodMode is already running in the background.\nCheck the system tray (near clock) or use Ctrl+Alt+X / Ctrl+Alt+O.",
-                        "GodMode — Already Running",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information
-                    );
+                    // Signal the already-running instance to show its window immediately
+                    NativeMethods.PostMessage(NativeMethods.HWND_BROADCAST, HotkeyManager.WM_SHOW_GODMODE, IntPtr.Zero, IntPtr.Zero);
                     Shutdown();
                     return;
                 }
@@ -53,19 +49,20 @@ namespace GodMode.Wpf
             // 2. Load Configuration
             _config = AppConfig.Load();
 
-            // 3. Initialize Overlay Window (Hidden by default for covert operation)
+            // 3. Initialize Overlay Window
             _mainWindow = new MainWindow(_config);
 
             // 4. Initialize Hotkey Manager (HWND_MESSAGE + Low Level Hook fallback)
             _hotkeyManager = new HotkeyManager();
             _hotkeyManager.SolveSelectedTriggered += OnSolveSelectedTriggered;
             _hotkeyManager.ScreenOcrTriggered += OnScreenOcrTriggered;
+            _hotkeyManager.ToggleUiTriggered += ToggleOverlayWindow;
 
             // 5. Initialize System Tray NotifyIcon
             InitializeTrayIcon();
 
-            // 6. If user explicitly provided --show flag, reveal overlay
-            if (e.Args.Contains("--show"))
+            // 6. Reveal window on launch unless start minimized is explicitly configured
+            if (!_config.StartMinimized || e.Args.Contains("--show"))
             {
                 _mainWindow.Show();
                 _mainWindow.Activate();
@@ -181,15 +178,19 @@ namespace GodMode.Wpf
         {
             if (_mainWindow == null) return;
 
-            if (_mainWindow.IsVisible)
+            Dispatcher.Invoke(() =>
             {
-                _mainWindow.Hide();
-            }
-            else
-            {
-                _mainWindow.Show();
-                _mainWindow.Activate();
-            }
+                if (_mainWindow.IsVisible)
+                {
+                    _mainWindow.Hide();
+                }
+                else
+                {
+                    _mainWindow.Show();
+                    _mainWindow.Activate();
+                    _mainWindow.WindowState = WindowState.Normal;
+                }
+            });
         }
 
         private async void OnSolveSelectedTriggered()

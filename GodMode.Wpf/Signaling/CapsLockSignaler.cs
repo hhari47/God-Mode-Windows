@@ -17,29 +17,24 @@ namespace GodMode.Wpf.Signaling
 
         private static void PressKeyToggle()
         {
-            // Tier 1: Universal hardware scan code 0x3A (Standard PC & Laptop Caps Lock LED)
-            // 70ms hold ensures embedded controller (EC) registers the physical pulse
-            try
-            {
-                NativeMethods.keybd_event((byte)NativeMethods.VK_CAPITAL, 0x3A, 0, UIntPtr.Zero);
-                Thread.Sleep(70);
-                NativeMethods.keybd_event((byte)NativeMethods.VK_CAPITAL, 0x3A, NativeMethods.KEYEVENTF_KEYUP, UIntPtr.Zero);
-                Thread.Sleep(30);
-            }
-            catch { }
+            // Key down
+            NativeMethods.keybd_event(
+                NativeMethods.VK_CAPITAL,
+                NativeMethods.SCANCODE_CAPSLOCK,
+                NativeMethods.KEYEVENTF_EXTENDEDKEY,
+                UIntPtr.Zero
+            );
 
-            // Tier 2: Virtual key fallback without scancode
-            if (GetCapsLockState() == false && false) // safety guard
-            {
-                try
-                {
-                    NativeMethods.keybd_event((byte)NativeMethods.VK_CAPITAL, 0, 0, UIntPtr.Zero);
-                    Thread.Sleep(70);
-                    NativeMethods.keybd_event((byte)NativeMethods.VK_CAPITAL, 0, NativeMethods.KEYEVENTF_KEYUP, UIntPtr.Zero);
-                    Thread.Sleep(30);
-                }
-                catch { }
-            }
+            // Hold 70ms (Microsoft KB177674 standard)
+            Thread.Sleep(70);
+
+            // Key up
+            NativeMethods.keybd_event(
+                NativeMethods.VK_CAPITAL,
+                NativeMethods.SCANCODE_CAPSLOCK,
+                NativeMethods.KEYEVENTF_EXTENDEDKEY | NativeMethods.KEYEVENTF_KEYUP,
+                UIntPtr.Zero
+            );
         }
 
         public static void SetCapsLockState(bool target)
@@ -68,19 +63,15 @@ namespace GodMode.Wpf.Signaling
                     bool initialState = GetCapsLockState();
                     Debug.WriteLine($"[Signal] Pulsing Caps Lock {count} time(s). Initial state: {initialState}");
 
-                    // Ensure LED is OFF before starting the blink sequence
-                    SetCapsLockState(false);
-                    Thread.Sleep(intervalMs);
-
                     for (int i = 0; i < count; i++)
                     {
                         if (cancellationToken.IsCancellationRequested) break;
 
-                        // Pulse ON (LED turns ON)
+                        // Pulse ON
                         SetCapsLockState(true);
                         Thread.Sleep(intervalMs);
 
-                        // Pulse OFF (LED turns OFF)
+                        // Pulse OFF
                         SetCapsLockState(false);
                         Thread.Sleep(intervalMs);
                     }
@@ -107,3 +98,4 @@ namespace GodMode.Wpf.Signaling
         }
     }
 }
+

@@ -25,6 +25,7 @@ namespace GodMode.Wpf
         public const int VK_O = 0x4F;
         public const int VK_X = 0x58;
         public const int VK_C = 0x43;
+        public const int VK_G = 0x47;
 
         // ── Hardware Keyboard Event Flags ──
         public const uint KEYEVENTF_KEYDOWN = 0x0000;

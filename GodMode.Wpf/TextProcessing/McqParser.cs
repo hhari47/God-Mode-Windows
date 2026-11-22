@@ -27,28 +27,22 @@ namespace GodMode.Wpf.TextProcessing
     public static class McqParser
     {
         private static readonly Regex OptionLineRegex = new Regex(
-            @"^[\s]*(?:(?:\([xX\s✓✔]?\)|\[[xX\s✓✔]?\]|[•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}))?\s*" +
+            @"^[\s]*(?:(?:\(([xX\s✓✔]?)\)|\[([xX\s✓✔]?)\]|([•·⁃◦▪▫–—\-\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}))\s*)?" +
             @"(?:\*\*|\*|__|_)?(?:(?:Option|Choice|Item|Answer|Selection)\s+)?" +
-            @"(?:" +
-                @"\((?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|" +
-                @"\[(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|" +
-                @"(?:\*\*|\*|__|_)?(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])\s*|" +
-                @"(?:(?:Option|Choice|Item|Answer|Selection)\s+)(?:\*\*|\*|__|_)?(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—]\s*|\s+(?=\S))|" +
-                @"(?<label>[1-9][0-9]?)(?:\s+(?=[A-Za-z0-9\""'\(\[<@\$/`]|-(?=[A-Za-z\-_]))|(?=[A-Za-z\""'\(\[{<@\$/`]|-(?=[A-Za-z\-_])))" +
-            @")" +
-            @"(?:\*\*|\*|__|_)?\s*(?<rest>.*)$",
+            @"(?:\(([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|\[([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|" +
+            @"(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])\s*|" +
+            @"(?:(?:Option|Choice|Item|Answer|Selection)\s+)(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—]\s*|\s+(?=\S))|" +
+            @"([1-9][0-9]?)(?:\s+(?=[A-Za-z0-9\""'\(\[<@\$/`]|-(?=[A-Za-z\-_]))|(?=[A-Za-z\""'\(\[{<@\$/`]|-(?=[A-Za-z\-_]))))" +
+            @"(?:\*\*|\*|__|_)?\s*(.*)$",
             RegexOptions.Compiled
         );
 
         private static readonly Regex StandaloneLabelRegex = new Regex(
-            @"^[\s]*(?:(?:\([xX\s✓✔]?\)|\[[xX\s✓✔]?\]|(?:[•·⁃◦▪▫–—\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}|\-(?=\s))))?\s*" +
-            @"(?:\*\*|\*|__|_)?(?:" +
-                @"(?:Option|Choice|Item|Answer|Selection)\s+(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})|" +
-                @"\((?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|" +
-                @"\[(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|" +
-                @"(?:\*\*|\*|__|_)?(?<label>[A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])|" +
-                @"(?<bare_label>[1-9][0-9]?|[A-Za-z])" +
-            @")[\s]*$",
+            @"^[\s]*(?:(?:\(([xX\s✓✔]?)\)|\[([xX\s✓✔]?)\]|(?:[•·⁃◦▪▫–—\*○◯⚪⚫⭘⚬⏺⭕🔘◉●⦿◌☐☑☒□■✓✔✗✘➤➢➜►▸▶➔→]|\.{1,3}|\-(?=\s)))\s*)?" +
+            @"(?:\*\*|\*|__|_)?(?:(?:Option|Choice|Item|Answer|Selection)\s+([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})|" +
+            @"(?:\(([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\)|\[([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})\]|" +
+            @"(?:\*\*|\*|__|_)?([A-Za-z]|[1-9][0-9]?|[IVXLCDMivxlcdm]{1,6})(?:\*\*|\*|__|_)?(?:[\.\)\:\-\/–—])|" +
+            @"([1-9][0-9]?|[A-Za-z])))[\s]*$",
             RegexOptions.Compiled
         );
 
@@ -140,7 +134,7 @@ namespace GodMode.Wpf.TextProcessing
                 });
             }
 
-            // If parsedOptions are empty strings (e.g. unnumbered options)
+            // If parsedOptions are empty strings (e.g. unnumbered options like 8, 10, 11, 12)
             if (parsedOptions.Count > 0 && parsedOptions.All(o => string.IsNullOrWhiteSpace(o.Text)))
             {
                 parsedOptions.Clear();
@@ -174,34 +168,42 @@ namespace GodMode.Wpf.TextProcessing
 
         private static PrefixMatch? MatchOptionPrefix(string line, int? nextExpectedNum, char? nextExpectedChar)
         {
-            // 1. Standard option line regex with named groups
+            // 1. Standard option line regex
             var m1 = OptionLineRegex.Match(line);
-            if (m1.Success && m1.Groups["label"].Success && !string.IsNullOrEmpty(m1.Groups["label"].Value))
+            if (m1.Success)
             {
-                string label = m1.Groups["label"].Value;
-                string rest = m1.Groups["rest"].Value.Trim();
-                return new PrefixMatch { Label = label, Rest = rest };
+                string label = "";
+                for (int g = 4; g <= 8; g++)
+                {
+                    if (m1.Groups[g].Success)
+                    {
+                        label = m1.Groups[g].Value;
+                        break;
+                    }
+                }
+                if (!string.IsNullOrEmpty(label))
+                {
+                    string rest = m1.Groups[9].Value.Trim();
+                    return new PrefixMatch { Label = label, Rest = rest };
+                }
             }
 
-            // 2. Standalone label regex with named groups
+            // 2. Standalone label
             var m2 = StandaloneLabelRegex.Match(line);
             if (m2.Success)
             {
                 string label = "";
-                bool isBare = false;
-
-                if (m2.Groups["label"].Success && !string.IsNullOrEmpty(m2.Groups["label"].Value))
+                for (int g = 4; g <= 8; g++)
                 {
-                    label = m2.Groups["label"].Value;
+                    if (m2.Groups[g].Success)
+                    {
+                        label = m2.Groups[g].Value;
+                        break;
+                    }
                 }
-                else if (m2.Groups["bare_label"].Success && !string.IsNullOrEmpty(m2.Groups["bare_label"].Value))
-                {
-                    label = m2.Groups["bare_label"].Value;
-                    isBare = true;
-                }
-
                 if (!string.IsNullOrEmpty(label))
                 {
+                    bool isBare = m2.Groups[8].Success;
                     if (isBare)
                     {
                         if (int.TryParse(label, out int num))
@@ -254,3 +256,4 @@ namespace GodMode.Wpf.TextProcessing
         }
     }
 }
+
