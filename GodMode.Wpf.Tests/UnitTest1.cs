@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Xunit;
 using GodMode.Wpf.TextProcessing;
 using GodMode.Wpf.Configuration;
