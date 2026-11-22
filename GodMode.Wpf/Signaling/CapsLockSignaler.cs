@@ -63,11 +63,18 @@ namespace GodMode.Wpf.Signaling
                     bool initialState = GetCapsLockState();
                     Debug.WriteLine($"[Signal] Pulsing Caps Lock {count} time(s). Initial state: {initialState}");
 
+                    // Ensure LED is OFF before starting the blink sequence
+                    if (GetCapsLockState())
+                    {
+                        SetCapsLockState(false);
+                        Thread.Sleep(intervalMs);
+                    }
+
                     for (int i = 0; i < count; i++)
                     {
                         if (cancellationToken.IsCancellationRequested) break;
 
-                        // Pulse ON
+                        // Pulse ON (single distinct blink)
                         SetCapsLockState(true);
                         Thread.Sleep(intervalMs);
 
@@ -77,7 +84,10 @@ namespace GodMode.Wpf.Signaling
                     }
 
                     // Restore initial hardware state
-                    SetCapsLockState(initialState);
+                    if (GetCapsLockState() != initialState)
+                    {
+                        SetCapsLockState(initialState);
+                    }
                     Debug.WriteLine($"[Signal] Complete. Restored Caps Lock to: {initialState}");
                 }, cancellationToken);
 

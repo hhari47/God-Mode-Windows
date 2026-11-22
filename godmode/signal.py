@@ -125,6 +125,8 @@ def _keybd_event_toggle() -> None:
         time.sleep(0.07)
         user32.keybd_event(VK_CAPITAL, 0x45, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
         time.sleep(0.03)
+        if get_capslock_state() != initial:
+            return
     except Exception as e:
         logger.debug("Extended keybd_event (0x45) failed: %s", e)
 
